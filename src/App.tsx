@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowRight, Heart, LoaderCircle, LockKeyhole, LogOut, Mail, Plus, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronRight, Heart, LoaderCircle, LockKeyhole, LogOut, Mail, Plus, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { GuestList } from './components/GuestList'
 
@@ -196,7 +196,7 @@ function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut
       }
       const available = (workspaceResult.data ?? []) as Workspace[]
       setWorkspaces(available)
-      setActiveWorkspaceId(current => available.some(item => item.id === current) ? current : (available[0]?.id ?? ''))
+      setActiveWorkspaceId(current => available.some(item => item.id === current) ? current : '')
       setLoading(false)
     }
     void loadAccess()
@@ -224,12 +224,26 @@ function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut
 
   if (workspaces.length > 0 && activeWorkspaceId) {
     const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId)!
-    return <GuestList workspaceId={activeWorkspace.id} workspaces={workspaces} onWorkspaceChange={setActiveWorkspaceId} accountEmail={session.user.email ?? ''} onSignOut={onSignOut} />
+    return <GuestList workspaceId={activeWorkspace.id} workspaces={workspaces} onWorkspaceChange={setActiveWorkspaceId} onBackToSpaces={() => setActiveWorkspaceId('')} accountEmail={session.user.email ?? ''} onSignOut={onSignOut} />
   }
+
+  if (workspaces.length > 0) return <WorkspaceChooser workspaces={workspaces} accountEmail={session.user.email ?? ''} onSelect={setActiveWorkspaceId} onSignOut={onSignOut} />
 
   if (isSuperAdmin) return <main className="auth-page"><div className="auth-card workspace-setup-card"><Brand /><div className="success-mark"><Users size={24} /></div><span className="auth-eyebrow">SUPER ADMIN</span><h1>Create your planning space.</h1><p className="auth-description">A planning space keeps a wedding’s guest list private and organized.</p><div className="signed-email"><span className="email-avatar"><UserRound size={17} /></span><span>{session.user.email}</span><span className="verified-dot" /></div><form className="workspace-create-form" onSubmit={createWorkspace}><label className="field-label">Planning space name<div className="input-wrap"><input autoFocus value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="e.g. Asha & Rahul’s wedding" maxLength={120} required /></div></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button auth-submit" disabled={creatingWorkspace}>{creatingWorkspace ? <LoaderCircle className="spin" size={17} /> : <PlusIcon />}Create planning space</button></form><button className="secondary-button signout-button" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div></main>
 
   return <main className="auth-page"><div className="auth-card signed-in-card"><Brand /><div className="success-mark"><ShieldCheck size={25} /></div><span className="auth-eyebrow">ACCOUNT READY</span><h1>You’re signed in.</h1><p className="auth-description">Your account doesn’t have a planning space yet. Ask a super admin to assign you to one.</p><div className="signed-email"><span className="email-avatar"><UserRound size={17} /></span><span>{session.user.email}</span><span className="verified-dot" title="Authenticated" /></div>{assignedRoles.length > 0 && <div className="access-summary"><span className="section-kicker">YOUR ACCESS</span><div className="role-chips">{assignedRoles.map(role => <span className="role-chip" key={role}>{role}</span>)}</div></div>}{error && <><p className="form-error" role="alert">{error}</p><button className="text-button" onClick={() => setRetry(value => value + 1)}>Try loading access again</button></>}<button className="secondary-button signout-button" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div></main>
+}
+
+function WorkspaceChooser({ workspaces, accountEmail, onSelect, onSignOut }: {
+  workspaces: Workspace[]
+  accountEmail: string
+  onSelect: (id: string) => void
+  onSignOut: () => void
+}) {
+  return <main className="space-home">
+    <header className="space-home-header"><Brand /><div className="space-account"><span>{accountEmail}</span><button className="account-signout" onClick={onSignOut}><LogOut size={15} /> Sign out</button></div></header>
+    <section className="space-home-content"><span className="guest-eyebrow">YOUR PLANNING SPACES</span><h1>Where would you like to go?</h1><p>Choose a planning space to continue.</p><div className="space-list" aria-label="Your planning spaces">{workspaces.map(workspace => <button className="space-card" key={workspace.id} onClick={() => onSelect(workspace.id)}><span className="space-card-icon"><CalendarDays size={19} /></span><span className="space-card-copy"><strong>{workspace.name}</strong><small>Open planning space</small></span><ChevronRight size={19} /></button>)}</div><div className="space-count">{workspaces.length} {workspaces.length === 1 ? 'planning space' : 'planning spaces'}</div></section>
+  </main>
 }
 
 function PlusIcon() { return <Plus size={17} /> }

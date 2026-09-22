@@ -55,7 +55,6 @@
   .guest-card-status{margin-top:8px;gap:10px}
   .guest-stay{margin-top:8px}
 }
-
 /* Keep planning controls in place while the guest data owns vertical scrolling. */
 .guest-app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .guest-topbar{flex:0 0 auto}
@@ -113,3 +112,71 @@
 
 .manage-people-button{min-height:36px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #e4e2da;border-radius:7px;background:#faf9f6;color:#627763;font-size:11px;font-weight:600;cursor:pointer}.manage-people-button:hover{background:#eef0e9}.people-dialog{width:min(100%,600px)}.people-dialog .dialog-header{align-items:flex-start}.people-workspace-name{margin:5px 0 0;color:#81877e;font-size:12px}.people-dialog-body{padding:17px 25px 8px;overflow:auto}.people-invite-form{display:grid;gap:11px;padding:14px;border:1px solid #e8e6df;border-radius:10px;background:#f6f5f0}.people-invite-form .form-field{font-size:12px}.people-invite-form .form-field input{min-height:44px;font-size:14px}.people-role-line{display:flex;justify-content:space-between;align-items:center;padding:2px 0;color:#7b8178;font-size:11px}.people-role-line strong{padding:5px 9px;border-radius:999px;background:#e6ece3;color:#58705a;font-size:10px}.people-help{margin:0;color:#858a81;font-size:10px;line-height:1.5}.people-invite-form .form-error,.people-invite-form .form-message{font-size:11px}.people-invite-form .primary-button{justify-self:start;min-width:140px;height:40px}.people-list-heading{display:flex;align-items:center;gap:8px;margin:19px 0 8px}.people-list-heading h3{margin:0;color:#4f5b50;font-size:13px}.people-list-heading>span{min-width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:#e9ebe4;color:#71796e;font-size:10px}.people-list{margin:0;padding:0;list-style:none;border-top:1px solid #ebe9e2}.people-list li{min-height:62px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #ebe9e2}.people-avatar{width:34px;height:34px;flex:0 0 auto;display:grid;place-items:center;border-radius:10px;background:#edf0e9;color:#718573}.people-identity{min-width:0;flex:1}.people-identity strong,.people-identity small,.people-role strong,.people-role small{display:block}.people-identity strong{overflow:hidden;color:#505b51;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.people-identity small{margin-top:3px;overflow:hidden;color:#92968d;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.people-role{text-align:right}.people-role strong{color:#677568;font-size:10px;font-weight:600}.people-role small{margin-top:4px;color:#92968d;font-size:9px}.people-empty{margin:0;padding:13px 0;color:#92968d;font-size:11px}.people-loading{min-height:60px;display:flex;align-items:center;gap:8px;color:#858a81;font-size:11px}.people-dialog-actions{padding:12px 25px 18px}
 @media(max-width:650px){.manage-people-button{width:34px;min-height:34px;padding:0}.manage-people-button span{display:none}.people-dialog-body{padding:13px 18px 7px}.people-invite-form{padding:11px}.people-list li{min-height:58px}.people-dialog-actions{padding:10px 18px max(13px,env(safe-area-inset-bottom))}.people-dialog-actions .secondary-button{flex:1}}
+
+/* Space chooser and the persistent planning-space section navigation. */
+.space-home{min-height:100vh;background:#f7f6f2}
+.space-home-header{height:66px;padding:0 max(24px,calc((100vw - 1120px)/2));display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e9e7e0}
+.space-home-header .auth-brand{margin:0}
+.space-account{display:flex;align-items:center;gap:18px;color:#858a81;font-size:11px}
+.space-account .account-signout{display:inline-flex;align-items:center;gap:6px}
+.space-home-content{width:min(680px,calc(100% - 40px));margin:0 auto;padding:clamp(52px,10vh,100px) 0 50px}
+.space-home-content h1{margin:10px 0 6px;color:#38443b;font:500 clamp(30px,5vw,42px) 'Playfair Display',serif;letter-spacing:-.8px}
+.space-home-content>p{margin:0 0 27px;color:#858a81;font-size:13px}
+.space-list{display:grid;gap:10px}
+.space-card{width:100%;min-height:76px;padding:13px 17px;display:flex;align-items:center;gap:14px;border:1px solid #e8e6df;border-radius:10px;background:#fff;color:#667166;text-align:left;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s}
+.space-card:hover{border-color:#cbd5c8;transform:translateY(-1px);box-shadow:0 5px 15px #3038300a}
+.space-card>svg{margin-left:auto;color:#879283}
+.space-card-icon{width:42px;height:42px;flex:0 0 auto;display:grid;place-items:center;border-radius:11px;background:#edf0e9;color:#718573}
+.space-card-copy{min-width:0;display:grid;gap:5px}
+.space-card-copy strong{overflow:hidden;color:#455347;font-size:14px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+.space-card-copy small{color:#999d93;font-size:11px}
+.space-count{margin-top:17px;color:#999d93;font-size:10px}
+.guest-app{height:100vh;height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.guest-topbar{position:relative;top:auto;z-index:3;flex:0 0 62px;height:62px;padding:0 28px;gap:16px}
+.guest-topbar .account-area{margin-left:auto}
+.planning-workspace-layout{min-height:0;flex:1;display:flex;overflow:hidden}
+.planning-sidebar{width:220px;flex:0 0 220px;padding:22px 14px;border-right:1px solid #e9e7e0;background:#f4f3ee;display:flex;flex-direction:column}
+.back-to-spaces{min-height:35px;padding:0 9px;display:flex;align-items:center;gap:8px;border:0;border-radius:7px;background:transparent;color:#7f867b;text-align:left;font-size:11px;cursor:pointer}
+.back-to-spaces:hover{background:#e9ebe4;color:#536653}
+.sidebar-space-name{margin:20px 9px 24px;overflow:hidden;color:#475449;font-size:12px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-label{padding:0 9px;color:#a0a397;font-size:9px;font-weight:700;letter-spacing:1.2px}
+.workspace-section-nav{display:grid;gap:4px;margin-top:8px}
+.workspace-section-nav button{min-height:42px;padding:0 10px;display:flex;align-items:center;gap:10px;border:0;border-radius:7px;background:transparent;color:#7f867b;text-align:left;font-size:12px;cursor:pointer}
+.workspace-section-nav button:hover{background:#eceee8}
+.workspace-section-nav button.section-selected{background:#e5eae1;color:#526853;font-weight:600}
+.guest-main{width:auto;max-width:none;min-width:0;flex:1;margin:0;padding:24px 32px 14px;overflow:hidden}
+.guest-heading-row,.guest-summary,.guest-toolbar,.guest-filters,.guest-view-row{flex-shrink:0}
+.guest-data-scroll{min-height:0}
+.lodging-heading{flex:0 0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:17px}
+.lodging-heading h1{margin:7px 0 4px;color:#38443b;font:500 38px 'Playfair Display',serif;letter-spacing:-.8px}
+.lodging-heading p{margin:0;color:#858a81;font-size:12px}
+.lodging-summary{display:flex;align-items:center;gap:8px;padding:10px 13px;border:1px solid #e8e6df;border-radius:8px;background:#f3f2ed;color:#858a81;font-size:10px;white-space:nowrap}
+.lodging-summary strong{color:#4e5d50;font-size:13px}
+.lodging-summary i{width:1px;height:16px;margin:0 5px;background:#dedfd7}
+.lodging-data-scroll{min-height:0;flex:1;display:flex;flex-direction:column;overflow:auto;border:1px solid #e8e6df;border-radius:10px;background:#fff}
+.lodging-table-scroll{min-height:0;flex:1;overflow:auto;overscroll-behavior:contain}
+.lodging-table{width:100%;min-width:720px;border-collapse:separate;border-spacing:0;text-align:left;color:#596259;font-size:11px}
+.lodging-table th,.lodging-table td{height:58px;padding:9px 14px;border-bottom:1px solid #edebe5;white-space:nowrap}
+.lodging-table thead th{position:sticky;top:0;z-index:2;height:42px;background:#f4f3ee;color:#888d83;font-size:9px;font-weight:700;letter-spacing:.4px}
+.lodging-table tbody tr:hover th,.lodging-table tbody tr:hover td{background:#fafaf7}
+.lodging-table tbody tr:last-child th,.lodging-table tbody tr:last-child td{border-bottom:0}
+.lodging-table tbody th{min-width:175px;color:#455347;font-weight:600}
+.lodging-table tbody th strong,.lodging-table tbody th small{display:block}
+.lodging-table tbody th small{margin-top:4px;color:#989d93;font-size:9px;font-weight:400}
+.lodging-action-heading,.lodging-action{position:sticky;right:0;z-index:1;background:#fff;border-left:1px solid #edebe5;text-align:center}
+.lodging-table thead .lodging-action-heading{z-index:3;background:#f4f3ee}
+.mobile-workspace-nav{display:none}
+@media(max-width:850px){.planning-sidebar{width:190px;flex-basis:190px}.guest-main{padding-left:22px;padding-right:22px}}
+@media(max-width:650px){
+  .space-home-header{height:56px;padding:0 16px}.space-account{gap:6px}.space-account>span{display:none}
+  .space-home-content{width:calc(100% - 32px);padding:54px 0 35px}.space-home-content>p{font-size:12px}.space-card{min-height:72px;padding:11px 12px}.space-card-copy strong{font-size:13px}
+  .guest-topbar{height:52px;flex-basis:52px;padding:0 12px;gap:7px}.guest-brand{font-size:17px}.guest-brand .brand-mark{width:26px;height:26px}.guest-topbar .workspace-picker-label{display:none}.guest-topbar .workspace-picker-wrap{margin-left:auto}.guest-topbar .workspace-picker{max-width:125px;font-size:11px}.guest-topbar .account-area{gap:3px;margin-left:0}.guest-topbar .account-signout{font-size:10px}
+  .planning-workspace-layout{position:relative;flex-direction:column}.planning-sidebar{display:none}.guest-main{width:100%;min-height:0;flex:1;padding:10px 14px 8px;overflow:hidden}
+  .mobile-workspace-nav{z-index:4;flex:0 0 auto;min-height:58px;padding:4px 8px max(4px,env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:space-around;border-top:1px solid #e9e7e0;background:#fbfaf7}
+  .mobile-workspace-nav button{min-width:70px;min-height:47px;padding:4px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;border-radius:8px;background:transparent;color:#92968d;font-size:9px;cursor:pointer}
+  .mobile-workspace-nav button.section-selected{background:#edf0e9;color:#536b56;font-weight:600}
+  .guest-heading-row h1{font-size:29px}.guest-heading-row p{font-size:10px}.guest-summary{height:42px;min-height:42px;margin:8px 0 7px}.guest-filters{padding:6px 0 5px}
+  .lodging-heading{align-items:flex-start;flex-direction:column;gap:11px;margin-bottom:10px}.lodging-heading h1{font-size:29px;margin:3px 0}.lodging-heading p{font-size:10px}.lodging-summary{padding:7px 10px;font-size:9px}.lodging-summary strong{font-size:12px}.lodging-data-scroll{flex:1}.lodging-table{min-width:680px}.lodging-table th,.lodging-table td{height:52px;padding:8px 11px}.lodging-table tbody th{min-width:145px}.lodging-footer{font-size:9px}
+}
+.lodging-editor-form{display:grid;align-content:start;gap:14px;padding:18px 25px 19px}
+@media(max-width:650px){.lodging-editor-form{gap:13px;padding:14px 18px 18px}}
