@@ -183,6 +183,7 @@
 }
 .lodging-editor-form{display:grid;align-content:start;gap:14px;padding:18px 25px 19px}
 @media(max-width:650px){.lodging-editor-form{gap:13px;padding:14px 18px 18px}}
+.people-role-line select{min-height:34px;padding:0 27px 0 9px;border:1px solid #e1e4dc;border-radius:7px;background:#fff;color:#58705a;font:600 11px 'DM Sans',sans-serif}
 .sheet-action-heading,.sheet-action,.lodging-action-heading,.lodging-action{width:48px;min-width:48px;max-width:48px;padding-left:6px!important;padding-right:6px!important}
 .sheet-edit-button{width:34px;min-width:34px;padding:0;justify-content:center}
 .lodging-view-row{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 9px;color:#92968d;font-size:10px}
@@ -198,3 +199,6 @@
 .lodging-card-details dt{color:#92968d;font-size:10px}
 .lodging-card-details dd{margin:5px 0 0;overflow-wrap:anywhere;color:#4f5b50;font-size:12px;font-weight:600}
 @media(max-width:650px){.lodging-view-row{margin-bottom:8px}.lodging-card-list{grid-template-columns:1fr;gap:8px}.lodging-card{padding:13px 14px}.lodging-card-details{padding-top:10px}}
+.space-create-form{display:grid;gap:12px;margin:0 0 20px;padding:16px;border:1px solid #e9e7e0;border-radius:12px;background:#fff}
+.lodging-filters{display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none}.lodging-filters::-webkit-scrollbar{display:none}
+@media(max-width:650px){.lodging-view-row{align-items:flex-start;flex-direction:column}.lodging-filters{width:100%;margin-right:-17px;padding-right:17px}.lodging-view-row .guest-view-switch{align-self:flex-end}}

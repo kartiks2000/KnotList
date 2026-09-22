@@ -36,7 +36,7 @@ Deno.serve(async request => {
   const { data: callerData, error: callerError } = await callerClient.auth.getUser(accessToken)
   if (callerError || !callerData.user) return response({ error: 'Your session is invalid or expired. Sign in again.' }, 401)
 
-  let input: { workspaceId?: unknown; email?: unknown }
+  let input: { workspaceId?: unknown; email?: unknown; roleKey?: unknown }
   try {
     input = await request.json()
   } catch {
@@ -44,15 +44,20 @@ Deno.serve(async request => {
   }
   const workspaceId = typeof input.workspaceId === 'string' ? input.workspaceId : ''
   const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : ''
+  const roleKey = input.roleKey === 'lodging_manager' ? 'lodging_manager' : input.roleKey === 'admin' ? 'admin' : ''
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) return response({ error: 'Choose a valid planning space.' }, 400)
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: 'Enter a valid email address.' }, 400)
+  if (!roleKey) return response({ error: 'Choose a supported access level.' }, 400)
 
-  const { data: canManageUsers, error: permissionError } = await callerClient.rpc('has_permission', {
-    requested_permission: 'users.manage',
-    requested_workspace_id: null,
-  })
-  if (permissionError) return response({ error: 'Could not verify your workspace permissions.' }, 500)
-  if (!canManageUsers) return response({ error: 'Only a super admin can invite people to a planning space.' }, 403)
+  const [globalUserPermission, lodgingInvitePermission] = await Promise.all([
+    callerClient.rpc('has_permission', { requested_permission: 'users.manage', requested_workspace_id: null }),
+    callerClient.rpc('has_permission', { requested_permission: 'lodging.members.manage', requested_workspace_id: workspaceId }),
+  ])
+  if (globalUserPermission.error || lodgingInvitePermission.error) return response({ error: 'Could not verify your workspace permissions.' }, 500)
+  const canInviteAdmins = globalUserPermission.data === true
+  const canInviteLodging = canInviteAdmins || lodgingInvitePermission.data === true
+  if (roleKey === 'admin' && !canInviteAdmins) return response({ error: 'Only a super admin can invite an Admin.' }, 403)
+  if (roleKey === 'lodging_manager' && !canInviteLodging) return response({ error: 'You do not have permission to invite Lodging users to this planning space.' }, 403)
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -65,13 +70,13 @@ Deno.serve(async request => {
   if (workspaceError) return response({ error: 'Could not verify the planning space.' }, 500)
   if (!workspace) return response({ error: 'That planning space does not exist.' }, 404)
 
-  const { data: adminRole, error: roleError } = await adminClient
+  const { data: selectedRole, error: roleError } = await adminClient
     .from('roles')
     .select('id')
-    .eq('key', 'admin')
+    .eq('key', roleKey)
     .is('workspace_id', null)
     .single()
-  if (roleError || !adminRole) return response({ error: 'The built-in Admin role is missing. Apply the role migration first.' }, 500)
+  if (roleError || !selectedRole) return response({ error: 'The selected access level is missing. Apply the latest role migration first.' }, 500)
 
   const { data: existingProfile, error: profileError } = await adminClient
     .from('profiles')
@@ -93,20 +98,20 @@ Deno.serve(async request => {
     const { error: membershipError } = await adminClient.from('workspace_memberships').insert({
       workspace_id: workspaceId,
       user_id: existingProfile.id,
-      role_id: adminRole.id,
+      role_id: selectedRole.id,
     })
     if (membershipError) return response({ error: 'Could not add this person to the planning space.' }, 500)
-    return response({ status: 'added', email })
+    return response({ status: 'added', email, roleKey })
   }
 
   if (existingProfile) {
     const { error: membershipError } = await adminClient.from('workspace_memberships').insert({
       workspace_id: workspaceId,
       user_id: existingProfile.id,
-      role_id: adminRole.id,
+      role_id: selectedRole.id,
     })
     if (membershipError && membershipError.code !== '23505') return response({ error: 'Could not add this person to the planning space.' }, 500)
-    return response({ status: 'pending_confirmation', email })
+    return response({ status: 'pending_confirmation', email, roleKey })
   }
 
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
@@ -125,11 +130,11 @@ Deno.serve(async request => {
   const { error: membershipError } = await adminClient.from('workspace_memberships').insert({
     workspace_id: workspaceId,
     user_id: inviteData.user.id,
-    role_id: adminRole.id,
+    role_id: selectedRole.id,
   })
   if (membershipError && membershipError.code !== '23505') {
     return response({ error: 'The Auth invitation was sent, but workspace access could not be assigned. Retry the invite after checking the workspace membership table.' }, 500)
   }
 
-  return response({ status: 'invited', email })
+  return response({ status: 'invited', email, roleKey })
 })
