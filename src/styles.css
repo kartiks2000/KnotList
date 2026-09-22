@@ -200,3 +200,5 @@
 .lodging-card-details dd{margin:5px 0 0;overflow-wrap:anywhere;color:#4f5b50;font-size:12px;font-weight:600}
 @media(max-width:650px){.lodging-view-row{margin-bottom:8px}.lodging-card-list{grid-template-columns:1fr;gap:8px}.lodging-card{padding:13px 14px}.lodging-card-details{padding-top:10px}}
 .space-create-form{display:grid;gap:12px;margin:0 0 20px;padding:16px;border:1px solid #e9e7e0;border-radius:12px;background:#fff}
+.lodging-filters{display:flex;align-items:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none}.lodging-filters::-webkit-scrollbar{display:none}
+@media(max-width:650px){.lodging-view-row{align-items:flex-start;flex-direction:column}.lodging-filters{width:100%;margin-right:-17px;padding-right:17px}.lodging-view-row .guest-view-switch{align-self:flex-end}}
