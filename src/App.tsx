@@ -80,7 +80,13 @@ function App() {
 
   if (loadingSession) return <main className="auth-page"><div className="loading-state"><LoaderCircle className="spin" size={24} /><span>Loading your account…</span></div></main>
 
-  if (session) return <AuthenticatedHome session={session} onSignOut={signOut} />
+  if (session) {
+    const invitedUser = session.user.user_metadata.knotlist_workspace_invite === true
+      && session.user.user_metadata.knotlist_invite_completed !== true
+    return invitedUser
+      ? <CompleteInvitedAccount session={session} />
+      : <AuthenticatedHome session={session} onSignOut={signOut} />
+  }
 
   return (
     <main className="auth-page">
@@ -103,6 +109,32 @@ function App() {
       <div className="auth-decoration" aria-hidden="true"><span className="deco-orbit orbit-a" /><span className="deco-orbit orbit-b" /><span className="deco-sun" /><span className="deco-flower">✳</span><span className="deco-heart">♡</span><span className="deco-caption">A new chapter, together</span></div>
     </main>
   )
+}
+
+function CompleteInvitedAccount({ session }: { session: Session }) {
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function setAccountPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase) return
+    if (password !== confirmPassword) {
+      setError('Those passwords do not match.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    const { error: updateError } = await supabase.auth.updateUser({
+      password,
+      data: { ...session.user.user_metadata, knotlist_invite_completed: true },
+    })
+    setBusy(false)
+    if (updateError) setError(updateError.message)
+  }
+
+  return <main className="auth-page"><div className="auth-card"><Brand /><div className="auth-heading"><span className="auth-eyebrow">YOU’RE INVITED</span><h1>Set your password.</h1><p className="auth-description">Choose a password to finish joining this planning space.</p></div><form className="auth-form" onSubmit={setAccountPassword}><label className="field-label">Password<div className="input-wrap"><LockKeyhole size={17} /><input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 8 characters" minLength={8} required /></div></label><label className="field-label">Confirm password<div className="input-wrap"><LockKeyhole size={17} /><input type="password" autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} placeholder="Enter the password again" minLength={8} required /></div></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button auth-submit" disabled={busy}>{busy ? <LoaderCircle className="spin" size={17} /> : <ArrowRight size={17} />}Finish setup</button></form></div><div className="auth-decoration" aria-hidden="true"><span className="deco-orbit orbit-a" /><span className="deco-orbit orbit-b" /><span className="deco-sun" /><span className="deco-flower">✳</span><span className="deco-heart">♡</span><span className="deco-caption">A new chapter, together</span></div></main>
 }
 
 function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
