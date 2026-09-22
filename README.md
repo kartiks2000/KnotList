@@ -11,13 +11,14 @@ A mobile-first React + TypeScript starter for a wedding planning app. The curren
 
 The frontend only uses the Supabase publishable/anon key. Never put a service role key in a `VITE_*` variable or in browser code.
 
-## Set up Supabase auth and roles
+## Set up Supabase auth, roles, and guest list
 
 1. Create a Supabase project and configure Auth email/password and email-confirmation settings to suit your launch.
-2. Apply [`supabase/migrations/20260922000000_auth_rbac_foundation.sql`](supabase/migrations/20260922000000_auth_rbac_foundation.sql) using the Supabase SQL Editor, or add it to a Supabase CLI migration history and deploy it with the CLI.
+2. For a new project, apply the migrations in order: [`20260922000000_auth_rbac_foundation.sql`](supabase/migrations/20260922000000_auth_rbac_foundation.sql), [`20260922010000_guest_groups.sql`](supabase/migrations/20260922010000_guest_groups.sql), [`20260922020000_single_guest_count.sql`](supabase/migrations/20260922020000_single_guest_count.sql), and [`20260922030000_room_assignments.sql`](supabase/migrations/20260922030000_room_assignments.sql). If you already applied earlier migrations, run only the migrations you have not applied, in order. Run each migration once.
 3. Create your first account from the app and confirm its email if confirmation is enabled.
 4. In the Supabase SQL Editor, edit and run [`supabase/bootstrap/first_super_admin.sql`](supabase/bootstrap/first_super_admin.sql) with that account's email. Keep super-admin bootstrap restricted to trusted project operators.
-5. Restart the Vite server after editing `.env.local`.
+5. Sign in as the super admin and create a planning space in the app. The guest list is scoped to that workspace.
+6. Restart the Vite server after editing `.env.local`.
 
 Public signup only creates an authenticated user and profile. It does not create a workspace, assign roles, or grant access to wedding data. The initial super admin is deliberately assigned through a trusted SQL operation rather than a browser flow.
 
@@ -37,7 +38,7 @@ Only the super admin can currently create role definitions, grant platform roles
 1. Add secure invitations and membership management using a Supabase Edge Function or trusted backend; never expose the service role key in the client.
 2. Add password reset, account settings, and session recovery UX.
 3. Add generated Supabase database types and use them in the browser client.
-4. Add workspace creation and switching once the onboarding flow and tenancy rules are defined.
+4. Add role-aware workspace membership and invitation management through a trusted backend.
 5. Add future product tables with workspace foreign keys, indexes, RLS read/write policies, and permission checks from day one.
 
-The app currently includes sign-in, sign-up, session display, and sign-out only. It does not yet invite users, display role assignments, or implement role administration screens.
+The app includes sign-in, sign-up, session display, sign-out, workspace creation for super admins, and guest-family list and edit flows. It does not yet invite users or provide an interface for role and membership administration.

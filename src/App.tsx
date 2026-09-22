@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowRight, Heart, LoaderCircle, LockKeyhole, LogOut, Mail, ShieldCheck, UserRound } from 'lucide-react'
+import { ArrowRight, Heart, LoaderCircle, LockKeyhole, LogOut, Mail, Plus, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { supabase } from './lib/supabase'
+import { GuestList } from './components/GuestList'
+
+type Workspace = { id: string; name: string }
 
 type AuthMode = 'sign-in' | 'sign-up'
 
@@ -14,9 +17,6 @@ function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const [accessLoading, setAccessLoading] = useState(false)
-  const [assignedRoles, setAssignedRoles] = useState<string[]>([])
-  const [workspaceCount, setWorkspaceCount] = useState(0)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -40,47 +40,6 @@ function App() {
       subscription.unsubscribe()
     }
   }, [])
-
-  useEffect(() => {
-    if (!session || !supabase) {
-      setAssignedRoles([])
-      setWorkspaceCount(0)
-      return
-    }
-    let alive = true
-    const userId = session.user.id
-    setAccessLoading(true)
-    async function loadAssignedRoles() {
-      const [platformResult, membershipResult] = await Promise.all([
-        supabase!.from('platform_roles').select('role_id').eq('user_id', userId),
-        supabase!.from('workspace_memberships').select('role_id, workspace_id').eq('user_id', userId),
-      ])
-      if (!alive) return
-      if (platformResult.error || membershipResult.error) {
-        setAssignedRoles([])
-        setWorkspaceCount(0)
-        setAccessLoading(false)
-        return
-      }
-      const roleIds = [...new Set([
-        ...(platformResult.data ?? []).map(row => row.role_id),
-        ...(membershipResult.data ?? []).map(row => row.role_id),
-      ])]
-      setWorkspaceCount((membershipResult.data ?? []).length)
-      if (roleIds.length === 0) {
-        setAssignedRoles([])
-        setAccessLoading(false)
-        return
-      }
-      const { data: roles } = await supabase!.from('roles').select('id, name').in('id', roleIds)
-      if (alive) {
-        setAssignedRoles((roles ?? []).map(role => role.name))
-        setAccessLoading(false)
-      }
-    }
-    void loadAssignedRoles()
-    return () => { alive = false }
-  }, [session])
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -121,9 +80,7 @@ function App() {
 
   if (loadingSession) return <main className="auth-page"><div className="loading-state"><LoaderCircle className="spin" size={24} /><span>Loading your account…</span></div></main>
 
-  if (session) {
-    return <main className="auth-page"><div className="auth-card signed-in-card"><Brand /><div className="success-mark"><ShieldCheck size={25} /></div><span className="auth-eyebrow">ACCOUNT READY</span><h1>You’re signed in.</h1><p className="auth-description">{accessLoading ? 'Checking your access…' : assignedRoles.length > 0 ? 'Your assigned app roles are ready.' : 'Your account is ready. A super admin can assign you to a workspace when access is needed.'}</p><div className="signed-email"><span className="email-avatar"><UserRound size={17} /></span><span>{session.user.email}</span><span className="verified-dot" title="Authenticated" /></div>{!accessLoading && assignedRoles.length > 0 && <div className="access-summary"><span className="section-kicker">YOUR ACCESS</span><div className="role-chips">{assignedRoles.map(role => <span className="role-chip" key={role}>{role}</span>)}</div>{workspaceCount > 0 && <p>Member of {workspaceCount} {workspaceCount === 1 ? 'workspace' : 'workspaces'}</p>}</div>}{error && <p className="form-error">{error}</p>}<button className="secondary-button signout-button" onClick={signOut}><LogOut size={16} /> Sign out</button><div className="auth-footnote">Need access? Ask your workspace administrator.</div></div></main>
-  }
+  if (session) return <AuthenticatedHome session={session} onSignOut={signOut} />
 
   return (
     <main className="auth-page">
@@ -147,6 +104,103 @@ function App() {
     </main>
   )
 }
+
+function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [assignedRoles, setAssignedRoles] = useState<string[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState('')
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+
+  useEffect(() => {
+    if (!supabase) return
+    let alive = true
+    async function loadAccess() {
+      setLoading(true)
+      setError('')
+      const [platformResult, membershipResult] = await Promise.all([
+        supabase!.from('platform_roles').select('role_id').eq('user_id', session.user.id),
+        supabase!.from('workspace_memberships').select('role_id, workspace_id').eq('user_id', session.user.id),
+      ])
+      if (!alive) return
+      if (platformResult.error || membershipResult.error) {
+        setError(platformResult.error?.message ?? membershipResult.error?.message ?? 'Could not load your access.')
+        setLoading(false)
+        return
+      }
+
+      const platformRoleIds = (platformResult.data ?? []).map(row => row.role_id)
+      const memberships = membershipResult.data ?? []
+      const roleIds = [...new Set([...platformRoleIds, ...memberships.map(row => row.role_id)])]
+      const rolesResult = roleIds.length
+        ? await supabase!.from('roles').select('id, key, name').in('id', roleIds)
+        : { data: [], error: null }
+      if (!alive) return
+      if (rolesResult.error) {
+        setError(rolesResult.error.message)
+        setLoading(false)
+        return
+      }
+      const roles = rolesResult.data ?? []
+      const superAdmin = roles.some(role => role.key === 'super_admin')
+      setIsSuperAdmin(superAdmin)
+      setAssignedRoles(roles.map(role => role.name))
+
+      const workspaceIds = [...new Set(memberships.map(row => row.workspace_id))]
+      const workspaceResult = superAdmin
+        ? await supabase!.from('workspaces').select('id, name').order('created_at', { ascending: true })
+        : workspaceIds.length
+          ? await supabase!.from('workspaces').select('id, name').in('id', workspaceIds).order('created_at', { ascending: true })
+          : { data: [], error: null }
+      if (!alive) return
+      if (workspaceResult.error) {
+        setError(workspaceResult.error.message)
+        setLoading(false)
+        return
+      }
+      const available = (workspaceResult.data ?? []) as Workspace[]
+      setWorkspaces(available)
+      setActiveWorkspaceId(current => available.some(item => item.id === current) ? current : (available[0]?.id ?? ''))
+      setLoading(false)
+    }
+    void loadAccess()
+    return () => { alive = false }
+  }, [session, retry])
+
+  async function createWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase) return
+    setCreatingWorkspace(true)
+    setError('')
+    const { data, error: createError } = await supabase.from('workspaces').insert({ name: newWorkspaceName.trim(), created_by: session.user.id }).select('id, name').single()
+    setCreatingWorkspace(false)
+    if (createError) {
+      setError(createError.message)
+      return
+    }
+    const workspace = data as Workspace
+    setWorkspaces(current => [...current, workspace])
+    setActiveWorkspaceId(workspace.id)
+    setNewWorkspaceName('')
+  }
+
+  if (loading) return <main className="auth-page"><div className="loading-state"><LoaderCircle className="spin" size={24} /><span>Loading your planning space…</span></div></main>
+
+  if (workspaces.length > 0 && activeWorkspaceId) {
+    const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId)!
+    return <GuestList workspaceId={activeWorkspace.id} workspaces={workspaces} onWorkspaceChange={setActiveWorkspaceId} accountEmail={session.user.email ?? ''} onSignOut={onSignOut} />
+  }
+
+  if (isSuperAdmin) return <main className="auth-page"><div className="auth-card workspace-setup-card"><Brand /><div className="success-mark"><Users size={24} /></div><span className="auth-eyebrow">SUPER ADMIN</span><h1>Create your planning space.</h1><p className="auth-description">A planning space keeps a wedding’s guest list private and organized.</p><div className="signed-email"><span className="email-avatar"><UserRound size={17} /></span><span>{session.user.email}</span><span className="verified-dot" /></div><form className="workspace-create-form" onSubmit={createWorkspace}><label className="field-label">Planning space name<div className="input-wrap"><input autoFocus value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="e.g. Asha & Rahul’s wedding" maxLength={120} required /></div></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button auth-submit" disabled={creatingWorkspace}>{creatingWorkspace ? <LoaderCircle className="spin" size={17} /> : <PlusIcon />}Create planning space</button></form><button className="secondary-button signout-button" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div></main>
+
+  return <main className="auth-page"><div className="auth-card signed-in-card"><Brand /><div className="success-mark"><ShieldCheck size={25} /></div><span className="auth-eyebrow">ACCOUNT READY</span><h1>You’re signed in.</h1><p className="auth-description">Your account doesn’t have a planning space yet. Ask a super admin to assign you to one.</p><div className="signed-email"><span className="email-avatar"><UserRound size={17} /></span><span>{session.user.email}</span><span className="verified-dot" title="Authenticated" /></div>{assignedRoles.length > 0 && <div className="access-summary"><span className="section-kicker">YOUR ACCESS</span><div className="role-chips">{assignedRoles.map(role => <span className="role-chip" key={role}>{role}</span>)}</div></div>}{error && <><p className="form-error" role="alert">{error}</p><button className="text-button" onClick={() => setRetry(value => value + 1)}>Try loading access again</button></>}<button className="secondary-button signout-button" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div></main>
+}
+
+function PlusIcon() { return <Plus size={17} /> }
 
 function Brand() {
   return <a className="brand auth-brand" href="#home"><span className="brand-mark"><Heart size={17} strokeWidth={1.8} /></span><span>knotlist</span></a>
