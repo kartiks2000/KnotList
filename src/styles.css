@@ -25,3 +25,88 @@
 @media(min-width:1600px){.guest-main.spreadsheet-main{max-width:100%;padding-left:48px;padding-right:48px}}
 
 @media(max-width:650px){.guest-summary{height:auto;min-height:52px;flex-wrap:wrap;justify-content:flex-start;padding:10px 12px;gap:9px 12px}.summary-divider{display:none}.guest-summary>div{flex:0 0 auto}}
+
+/* Tighten the page header so more of the guest list stays above the fold. */
+.guest-main{padding-top:34px}
+.guest-summary{margin-top:18px;margin-bottom:12px}
+.guest-filters{padding-top:12px;padding-bottom:10px}
+@media(min-width:1000px){.guest-main{padding-top:36px}}
+@media(max-width:650px){
+  .guest-topbar{height:54px}
+  .guest-main{padding:18px 15px 18px}
+  .guest-heading-row{gap:10px;margin-bottom:0}
+  .guest-heading-row h1{font-size:32px;margin:4px 0 2px}
+  .guest-heading-row p{font-size:11px;line-height:1.35}
+  .guest-summary{height:46px;min-height:46px;margin:12px 0 9px;padding:0 9px;gap:7px;font-size:9px}
+  .guest-summary>div{gap:4px}
+  .guest-summary strong{font-size:11px}
+  .guest-summary svg{width:13px;height:13px}
+  .guest-toolbar{gap:7px}
+  .guest-search{height:42px;padding:0 11px}
+  .guest-search svg{width:16px;height:16px}
+  .guest-filters{padding:10px 0 8px;gap:5px}
+  .filter-chip{min-height:32px;padding:0 10px}
+  .guest-view-row{margin-top:6px;margin-bottom:8px}
+  .guest-view-switch{padding:2px}
+  .guest-view-switch button{min-height:32px}
+  .guest-list{gap:8px}
+  .guest-card-main{padding:13px 13px 12px}
+  .guest-card-meta{margin-top:8px}
+  .guest-card-status{margin-top:8px;gap:10px}
+  .guest-stay{margin-top:8px}
+}
+
+/* Keep planning controls in place while the guest data owns vertical scrolling. */
+.guest-app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.guest-topbar{flex:0 0 auto}
+.guest-main{width:100%;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.guest-data-scroll{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;padding-bottom:4px}
+@media(max-width:650px){.guest-data-scroll{scrollbar-gutter:auto}}
+
+/* Spreadsheet view has its own scroll area; its column header and hint stay put. */
+.guest-main.spreadsheet-main .guest-data-scroll{display:flex;flex-direction:column;overflow:hidden}
+.guest-main.spreadsheet-main .spreadsheet-panel{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid #e8e6df;border-radius:10px;background:#fff}
+.guest-main.spreadsheet-main .spreadsheet-scroll{flex:1 1 auto;min-height:0;overflow:auto;border:0;border-radius:0}
+.guest-main.spreadsheet-main .spreadsheet-hint{flex:0 0 auto;display:block;margin:0;padding:9px 12px;border-top:1px solid #edebe5;background:#f7f6f2;color:#90958b;font-size:10px}
+
+/* Keep the card controls at their own height; only the data panel should shrink and scroll. */
+.guest-heading-row,.guest-summary,.guest-toolbar,.guest-filters,.guest-view-row{flex:0 0 auto}
+@media(max-width:650px){
+  .guest-main:not(.spreadsheet-main){padding:10px 14px 12px}
+  .guest-topbar{height:50px}
+  .guest-heading-row{gap:8px}
+  .guest-heading-row h1{font-size:29px;line-height:1.05;margin:2px 0}
+  .guest-heading-row p{font-size:10px;line-height:1.25}
+  .guest-summary{height:42px;min-height:42px;margin:8px 0 7px;padding:0 8px;gap:6px}
+  .guest-toolbar{gap:6px}
+  .guest-search{height:38px;padding:0 10px}
+  .guest-filters{padding:6px 0 5px;gap:5px}
+  .filter-chip{min-height:29px;padding:0 9px;font-size:9px}
+  .guest-view-row{margin:4px 0 6px}
+  .guest-view-switch button{min-height:29px;padding:0 9px}
+  .guest-data-scroll{position:relative;z-index:0}
+}
+
+@media(max-width:650px){
+  .guest-main{padding:10px 14px 8px}
+  .guest-summary{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;white-space:nowrap}
+  .guest-summary::-webkit-scrollbar{display:none}
+  .guest-main.spreadsheet-main .guest-data-scroll{flex:1 1 0%;min-height:0}
+  .guest-main.spreadsheet-main .spreadsheet-panel{flex:1 1 0%;min-height:0}
+  .guest-main.spreadsheet-main .spreadsheet-scroll{flex:1 1 0%;min-height:0}
+}
+
+@media(min-width:651px){
+  .guest-main{padding-top:18px;padding-bottom:8px}
+  .guest-heading-row h1{font-size:38px;margin:4px 0 3px}
+  .guest-heading-row p{font-size:12px}
+  .guest-summary{height:44px;margin:12px 0 8px;padding:0 12px}
+  .guest-toolbar .guest-search{height:40px}
+  .guest-filters{padding:7px 0 5px}
+  .filter-chip{min-height:32px}
+  .guest-view-row{margin:4px 0 6px}
+  .guest-view-switch button{min-height:30px}
+  .guest-footer{margin-top:8px;padding:8px 0}
+}
+.guest-main.spreadsheet-main .guest-data-scroll{flex:1 1 0%;min-height:0}
+.guest-main.spreadsheet-main .spreadsheet-panel{flex:1 1 0%;min-height:0}

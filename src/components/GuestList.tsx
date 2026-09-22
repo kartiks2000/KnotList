@@ -4,7 +4,7 @@ import { CalendarDays, Check, ChevronDown, ChevronRight, Edit3, Heart, LoaderCir
 import { supabase } from '../lib/supabase'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
-type Filter = 'all' | 'invite' | 'rsvp' | 'arriving'
+type Filter = 'all' | 'invite' | 'rsvp' | 'confirmed'
 type ViewMode = 'cards' | 'spreadsheet'
 
 export type GuestGroup = {
@@ -45,7 +45,7 @@ const filterLabels: Record<Filter, string> = {
   all: 'All families',
   invite: 'To invite',
   rsvp: 'Awaiting RSVP',
-  arriving: 'Arriving soon',
+  confirmed: 'Confirmed',
 }
 
 function toLocalDateTime(value: string | null) {
@@ -62,14 +62,6 @@ function toIso(value: string) {
 function formatDate(value: string | null) {
   if (!value) return ''
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
-}
-
-function isArrivingSoon(value: string | null) {
-  if (!value) return false
-  const now = new Date()
-  const arrival = new Date(value)
-  const days = (arrival.getTime() - now.getTime()) / 86_400_000
-  return days >= 0 && days <= 14
 }
 
 export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountEmail, onSignOut }: {
@@ -121,7 +113,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
       const matchesFilter = filter === 'all'
         || (filter === 'invite' && !guest.invitation_sent)
         || (filter === 'rsvp' && guest.invitation_sent && guest.rsvp_status === 'pending')
-        || (filter === 'arriving' && isArrivingSoon(guest.check_in_at))
+        || (filter === 'confirmed' && guest.rsvp_status === 'confirmed')
       return matchesSearch && matchesFilter
     })
   }, [guests, search, filter])
@@ -129,6 +121,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
   const guestTotal = guests.reduce((total, guest) => total + guest.guest_count, 0)
   const inviteTotal = guests.filter(guest => !guest.invitation_sent).length
   const waitingTotal = guests.filter(guest => guest.invitation_sent && guest.rsvp_status === 'pending').length
+  const confirmedTotal = guests.filter(guest => guest.rsvp_status === 'confirmed').length
   const assignedRoomTotal = guests.reduce((total, guest) => total + (guest.assigned_room_numbers ?? []).filter(room => room.trim()).length, 0)
 
   function showEditor(guest?: GuestGroup) {
@@ -161,13 +154,14 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
 
         <div className="guest-toolbar"><label className="guest-search"><Search size={18} /><input aria-label="Search families or contacts" placeholder="Search families or contacts" value={search} onChange={event => setSearch(event.target.value)} /></label><button className="mobile-add-button" onClick={() => showEditor()} aria-label="Add family"><Plus size={18} /><span>Add</span></button></div>
 
-        <nav className="guest-filters" aria-label="Filter guest list">{(Object.keys(filterLabels) as Filter[]).map(key => <button key={key} className={`filter-chip ${filter === key ? 'filter-active' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>{filterLabels[key]}{key === 'invite' && inviteTotal > 0 && <span className="filter-count">{inviteTotal}</span>}{key === 'rsvp' && waitingTotal > 0 && <span className="filter-count">{waitingTotal}</span>}</button>)}</nav>
+        <nav className="guest-filters" aria-label="Filter guest list">{(Object.keys(filterLabels) as Filter[]).map(key => <button key={key} className={`filter-chip ${filter === key ? 'filter-active' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>{filterLabels[key]}{key === 'invite' && inviteTotal > 0 && <span className="filter-count">{inviteTotal}</span>}{key === 'rsvp' && waitingTotal > 0 && <span className="filter-count">{waitingTotal}</span>}{key === 'confirmed' && confirmedTotal > 0 && <span className="filter-count">{confirmedTotal}</span>}</button>)}</nav>
 
         {!loading && !loadError && guests.length > 0 && <div className="guest-view-row"><span>{filteredGuests.length} {filteredGuests.length === 1 ? 'family' : 'families'}</span><div className="guest-view-switch" role="group" aria-label="Guest list view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => setViewMode('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => setViewMode('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div>}
 
-        {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading families…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one family</h2><p>Add a family you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first family</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No families match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Families you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
-
-        <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
+        <div className="guest-data-scroll">
+          {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading families…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one family</h2><p>Add a family you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first family</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No families match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Families you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
+          <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
+        </div>
       </main>
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
@@ -203,7 +197,17 @@ function GuestSpreadsheet({ guests, onOpen, onEdit }: {
   onOpen: (guest: GuestGroup) => void
   onEdit: (guest: GuestGroup) => void
 }) {
-  return <div className="spreadsheet-scroll" role="region" aria-label="Guest spreadsheet" tabIndex={0}><table className="guest-spreadsheet"><thead><tr><th className="sticky-family">Family</th><th>Guests</th><th>RSVP</th><th>Invitation sent</th><th>Last call</th><th>Check-in</th><th>Check-out</th><th>Number of rooms</th><th>Room numbers</th><th className="sheet-action-heading">Action</th></tr></thead><tbody>{guests.map(guest => <tr key={guest.id}><th scope="row" className="sticky-family"><button className="sheet-family-button" onClick={() => onOpen(guest)}>{guest.family_name}<small>{guest.contact_name || guest.phone || 'View details'}</small></button></th><td>{guest.guest_count}</td><td><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></td><td>{guest.invitation_sent ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.invitation_sent_at)}</span> : <span className="sheet-muted">Not sent</span>}</td><td>{guest.invitation_call_made ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.last_called_at)}</span> : <span className="sheet-muted">Not called</span>}</td><td>{formatDate(guest.check_in_at) || '—'}</td><td>{formatDate(guest.check_out_at) || '—'}</td><td>{guest.room_count ?? '—'}</td><td>{guest.assigned_room_numbers.join(', ') || '—'}</td><td className="sheet-action"><button className="sheet-edit-button" onClick={() => onEdit(guest)}><Edit3 size={14} /> Edit</button></td></tr>)}</tbody></table><p className="spreadsheet-hint">Scroll sideways to see more columns.</p></div>
+  return (
+    <div className="spreadsheet-panel">
+      <div className="spreadsheet-scroll" role="region" aria-label="Guest spreadsheet" tabIndex={0}>
+        <table className="guest-spreadsheet">
+          <thead><tr><th className="sticky-family">Family</th><th>Guests</th><th>RSVP</th><th>Invitation sent</th><th>Last call</th><th>Check-in</th><th>Check-out</th><th>Number of rooms</th><th>Room numbers</th><th className="sheet-action-heading">Action</th></tr></thead>
+          <tbody>{guests.map(guest => <tr key={guest.id}><th scope="row" className="sticky-family"><button className="sheet-family-button" onClick={() => onOpen(guest)}>{guest.family_name}<small>{guest.contact_name || guest.phone || 'View details'}</small></button></th><td>{guest.guest_count}</td><td><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></td><td>{guest.invitation_sent ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.invitation_sent_at)}</span> : <span className="sheet-muted">Not sent</span>}</td><td>{guest.invitation_call_made ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.last_called_at)}</span> : <span className="sheet-muted">Not called</span>}</td><td>{formatDate(guest.check_in_at) || '—'}</td><td>{formatDate(guest.check_out_at) || '—'}</td><td>{guest.room_count ?? '—'}</td><td>{guest.assigned_room_numbers.join(', ') || '—'}</td><td className="sheet-action"><button className="sheet-edit-button" onClick={() => onEdit(guest)}><Edit3 size={14} /> Edit</button></td></tr>)}</tbody>
+        </table>
+      </div>
+      <p className="spreadsheet-hint">Scroll sideways to see more columns.</p>
+    </div>
+  )
 }
 
 function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
