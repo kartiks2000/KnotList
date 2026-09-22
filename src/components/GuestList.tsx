@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { CalendarDays, Check, ChevronDown, ChevronRight, Edit3, Heart, LoaderCircle, Mail, Plus, Search, Table2, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, Heart, LoaderCircle, Mail, Plus, Search, Table2, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
 type Filter = 'all' | 'invite' | 'rsvp' | 'confirmed'
 type ViewMode = 'cards' | 'spreadsheet'
+type WorkspaceSection = 'guests' | 'lodging'
 
 export type GuestGroup = {
   id: string
@@ -64,10 +65,11 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
 }
 
-export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountEmail, onSignOut }: {
+export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackToSpaces, accountEmail, onSignOut }: {
   workspaceId: string
   workspaces: { id: string; name: string }[]
   onWorkspaceChange: (workspaceId: string) => void
+  onBackToSpaces: () => void
   accountEmail: string
   onSignOut: () => void
 }) {
@@ -77,8 +79,10 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
+  const [section, setSection] = useState<WorkspaceSection>('guests')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingGuest, setEditingGuest] = useState<GuestGroup | null>(null)
+  const [lodgingEditingGuest, setLodgingEditingGuest] = useState<GuestGroup | null>(null)
   const [detailsGuest, setDetailsGuest] = useState<GuestGroup | null>(null)
   const [toast, setToast] = useState('')
   const [canManagePeople, setCanManagePeople] = useState(false)
@@ -148,6 +152,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
   function notifySaved(guest: GuestGroup, wasEditing: boolean) {
     setEditorOpen(false)
     setEditingGuest(null)
+    setLodgingEditingGuest(null)
     setDetailsGuest(null)
     setToast(`${guest.family_name} ${wasEditing ? 'saved' : 'added'}`)
     window.setTimeout(() => setToast(''), 3000)
@@ -163,7 +168,19 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
         <div className="account-area">{canManagePeople && <button className="manage-people-button" onClick={() => setPeopleOpen(true)} aria-label="Manage people in this planning space" title="Manage people"><UserPlus size={16} /><span>People</span></button>}<span>{accountEmail}</span><button className="account-signout" onClick={onSignOut}>Sign out</button></div>
       </header>
 
-      <main className={`guest-main ${viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''}`}>
+      <div className="planning-workspace-layout">
+        <aside className="planning-sidebar" aria-label="Planning space navigation">
+          <button className="back-to-spaces" onClick={onBackToSpaces}><ArrowLeft size={16} /><span>All spaces</span></button>
+          <div className="sidebar-space-name">{workspaces.find(workspace => workspace.id === workspaceId)?.name}</div>
+          <span className="sidebar-label">PLAN</span>
+          <nav className="workspace-section-nav" aria-label="Sections">
+            <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={17} /><span>Guests</span></button>
+            <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={17} /><span>Lodging</span></button>
+          </nav>
+        </aside>
+
+      <main className={`guest-main ${section === 'guests' && viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''}`}>
+        {section === 'guests' ? <>
         <div className="guest-heading-row"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h1>Guests</h1><p>Keep track of families, replies, and stays.</p></div><button className="primary-button add-family-button" onClick={() => showEditor()}><Plus size={18} /> Add family</button></div>
         <section className="guest-summary" aria-label="Guest list summary"><div><Users size={16} /><strong>{guests.length}</strong><span>{guests.length === 1 ? 'family' : 'families'}</span></div><span className="summary-divider" /><div><strong>{guestTotal}</strong><span>guests</span></div><span className="summary-divider" /><div><strong>{inviteTotal}</strong><span>to invite</span></div><span className="summary-divider" /><div><strong>{waitingTotal}</strong><span>awaiting RSVP</span></div><span className="summary-divider" /><div><strong>{assignedRoomTotal}</strong><span>rooms assigned</span></div></section>
 
@@ -177,9 +194,13 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
           {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading families…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one family</h2><p>Add a family you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first family</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No families match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Families you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
           <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
         </div>
+        </> : <LodgingView guests={guests} loading={loading} loadError={loadError} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} />}
       </main>
+      <nav className="mobile-workspace-nav" aria-label="Planning space sections"><button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button><button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button><button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
+      </div>
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
+      {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => setLodgingEditingGuest(null)} onSaved={guest => notifySaved(guest, true)} />}
       {detailsGuest && <GuestDetails guest={detailsGuest} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
       {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} onClose={() => setPeopleOpen(false)} />}
       {toast && <div className="toast-message" role="status"><Check size={17} /> {toast}</div>}
@@ -193,6 +214,68 @@ type WorkspacePerson = {
   display_name: string
   email_confirmed_at: string | null
   role_name: string
+}
+
+function LodgingView({ guests, loading, loadError, onRetry, onEdit }: {
+  guests: GuestGroup[]
+  loading: boolean
+  loadError: string
+  onRetry: () => void
+  onEdit: (guest: GuestGroup) => void
+}) {
+  const guestTotal = guests.reduce((count, guest) => count + guest.guest_count, 0)
+  const roomTotal = guests.reduce((count, guest) => count + (guest.room_count ?? 0), 0)
+
+  return <>
+    <div className="lodging-heading"><div><span className="guest-eyebrow">ROOM OVERVIEW</span><h1>Lodging</h1><p>Guests, room totals, and allotted room numbers.</p></div><div className="lodging-summary"><strong>{guestTotal}</strong><span>guests</span><i /><strong>{roomTotal}</strong><span>total rooms</span></div></div>
+    <div className="lodging-data-scroll">
+      {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading lodging…</div>
+        : loadError ? <div className="guest-state error-state"><h2>Couldn’t load lodging</h2><p>Check your connection or workspace access, then try again.</p><button className="secondary-button" onClick={onRetry}>Try again</button></div>
+          : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No families yet</h2><p>Add families in Guests, then record their stay and room details here.</p></div>
+            : <div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Family</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th><th className="lodging-action-heading">Action</th></tr></thead><tbody>{guests.map(guest => <tr key={guest.id}><th scope="row"><strong>{guest.family_name}</strong><small>{guest.contact_name || guest.phone || 'No contact added'}</small></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td><td className="lodging-action"><button className="sheet-edit-button" onClick={() => onEdit(guest)}><Edit3 size={14} /> Edit</button></td></tr>)}</tbody></table><p className="spreadsheet-hint">Scroll sideways to see more columns.</p></div>}
+    </div>
+    {!loading && !loadError && guests.length > 0 && <footer className="guest-footer lodging-footer">Your lodging details are shared with people who have access to this planning space.</footer>}
+  </>
+}
+
+function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
+  workspaceId: string
+  guest: GuestGroup
+  onClose: () => void
+  onSaved: (guest: GuestGroup) => void
+}) {
+  const [guestCount, setGuestCount] = useState(String(guest.guest_count))
+  const [roomCount, setRoomCount] = useState(guest.room_count == null ? '' : String(guest.room_count))
+  const [roomNumbers, setRoomNumbers] = useState<string[]>(guest.assigned_room_numbers ?? [])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase) return
+    setSaving(true)
+    setError('')
+    const userId = (await supabase.auth.getUser()).data.user?.id ?? null
+    const { data, error: saveError } = await supabase.from('guest_groups').update({
+      guest_count: Number(guestCount),
+      room_count: roomCount === '' ? null : Number(roomCount),
+      assigned_room_numbers: roomNumbers.map(room => room.trim()).filter(Boolean),
+      updated_by: userId,
+    }).eq('workspace_id', workspaceId).eq('id', guest.id).select().single()
+    setSaving(false)
+    if (saveError) {
+      setError('Could not update these lodging details. Check your access and try again.')
+      return
+    }
+    onSaved(data as GuestGroup)
+  }
+
+  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose() }}><section className="guest-dialog lodging-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="lodging-editor-title"><header className="dialog-header"><div><span className="guest-eyebrow">{guest.family_name}</span><h2 id="lodging-editor-title">Update lodging</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form className="guest-form lodging-editor-form" onSubmit={save}>
+    <label className="form-field">Number of guests<input type="number" inputMode="numeric" min="0" max="500" value={guestCount} onChange={event => setGuestCount(event.target.value)} required /></label>
+    <label className="form-field">Total rooms<input type="number" inputMode="numeric" min="0" max="100" value={roomCount} onChange={event => setRoomCount(event.target.value)} placeholder="Not set" /></label>
+    <div className="assigned-rooms-editor"><div className="assigned-rooms-heading">Allotted room numbers</div>{roomNumbers.length === 0 && <p className="room-assignment-hint">No room numbers allotted.</p>}{roomNumbers.map((room, index) => <div className="assigned-room-row" key={index}><label className="sr-only" htmlFor={`lodging-room-${guest.id}-${index}`}>Allotted room number {index + 1}</label><input id={`lodging-room-${guest.id}-${index}`} value={room} maxLength={30} onChange={event => setRoomNumbers(current => current.map((value, roomIndex) => roomIndex === index ? event.target.value : value))} placeholder={`Room number ${index + 1}`} /><button type="button" className="remove-room-button" onClick={() => setRoomNumbers(current => current.filter((_, roomIndex) => roomIndex !== index))} aria-label={`Remove room ${room || index + 1}`}><X size={17} /></button></div>)}<button type="button" className="add-room-button" onClick={() => setRoomNumbers(current => [...current, ''])}><Plus size={15} /> Add room number</button></div>
+    {error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Saving…' : 'Save changes'}</button></div>
+    </form></section></div>
 }
 
 function WorkspacePeopleDialog({ workspaceId, workspaceName, onClose }: {
