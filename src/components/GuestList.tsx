@@ -87,22 +87,50 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const [detailsGuest, setDetailsGuest] = useState<GuestGroup | null>(null)
   const [toast, setToast] = useState('')
   const [canManagePeople, setCanManagePeople] = useState(false)
+  const [canInviteAdmins, setCanInviteAdmins] = useState(false)
+  const [canInviteLodging, setCanInviteLodging] = useState(false)
+  const [canAccessGuests, setCanAccessGuests] = useState(false)
+  const [canAccessLodging, setCanAccessLodging] = useState(false)
+  const [canManageLodging, setCanManageLodging] = useState(false)
   const [peopleOpen, setPeopleOpen] = useState(false)
 
   async function loadGuests() {
     if (!supabase) return
     setLoading(true)
     setLoadError('')
-    const { data, error } = await supabase
-      .from('guest_groups')
-      .select('*')
-      .eq('workspace_id', workspaceId)
-      .order('family_name', { ascending: true })
-    if (error) {
-      setLoadError(error.message)
-      setGuests([])
+    const [guestRead, lodgingRead, lodgingManage] = await Promise.all([
+      supabase.rpc('has_permission', { requested_permission: 'app_data.read', requested_workspace_id: workspaceId }),
+      supabase.rpc('has_permission', { requested_permission: 'lodging.read', requested_workspace_id: workspaceId }),
+      supabase.rpc('has_permission', { requested_permission: 'lodging.manage', requested_workspace_id: workspaceId }),
+    ])
+    const canReadGuestData = !guestRead.error && guestRead.data === true
+    const canReadLodgingData = !lodgingRead.error && lodgingRead.data === true
+    const canManageLodgingData = !lodgingManage.error && lodgingManage.data === true
+    setCanAccessGuests(canReadGuestData)
+    setCanAccessLodging(canReadLodgingData)
+    setCanManageLodging(canManageLodgingData)
+
+    if (canReadGuestData) {
+      const { data, error } = await supabase.from('guest_groups').select('*').eq('workspace_id', workspaceId).order('family_name', { ascending: true })
+      if (error) {
+        setLoadError(error.message)
+        setGuests([])
+      } else {
+        setGuests((data ?? []) as GuestGroup[])
+        setSection('guests')
+      }
+    } else if (canReadLodgingData) {
+      const { data, error } = await supabase.rpc('get_workspace_lodging', { requested_workspace_id: workspaceId })
+      if (error) {
+        setLoadError(error.message)
+        setGuests([])
+      } else {
+        setGuests((data ?? []) as GuestGroup[])
+        setSection('lodging')
+      }
     } else {
-      setGuests((data ?? []) as GuestGroup[])
+      setLoadError('You do not have access to guest or lodging details in this planning space.')
+      setGuests([])
     }
     setLoading(false)
   }
@@ -110,18 +138,30 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   useEffect(() => {
     setEditorOpen(false)
     setDetailsGuest(null)
+    setGuests([])
+    setCanAccessGuests(false)
+    setCanAccessLodging(false)
+    setCanManageLodging(false)
+    setSection('guests')
     void loadGuests()
   }, [workspaceId])
 
   useEffect(() => {
     let alive = true
     setCanManagePeople(false)
+    setCanInviteAdmins(false)
+    setCanInviteLodging(false)
     if (!supabase) return () => { alive = false }
-    void supabase.rpc('has_permission', {
-      requested_permission: 'users.manage',
-      requested_workspace_id: workspaceId,
-    }).then(({ data, error }) => {
-      if (alive) setCanManagePeople(!error && data === true)
+    void Promise.all([
+      supabase.rpc('has_permission', { requested_permission: 'users.manage', requested_workspace_id: null }),
+      supabase.rpc('has_permission', { requested_permission: 'lodging.members.manage', requested_workspace_id: workspaceId }),
+    ]).then(([adminResult, lodgingResult]) => {
+      if (!alive) return
+      const adminAllowed = !adminResult.error && adminResult.data === true
+      const lodgingAllowed = !lodgingResult.error && lodgingResult.data === true
+      setCanInviteAdmins(adminAllowed)
+      setCanInviteLodging(adminAllowed || lodgingAllowed)
+      setCanManagePeople(adminAllowed || lodgingAllowed)
     })
     return () => { alive = false }
   }, [workspaceId])
@@ -175,13 +215,13 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
           <div className="sidebar-space-name">{workspaces.find(workspace => workspace.id === workspaceId)?.name}</div>
           <span className="sidebar-label">PLAN</span>
           <nav className="workspace-section-nav" aria-label="Sections">
-            <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={17} /><span>Guests</span></button>
-            <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={17} /><span>Lodging</span></button>
+            {canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={17} /><span>Guests</span></button>}
+            {canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={17} /><span>Lodging</span></button>}
           </nav>
         </aside>
 
       <main className={`guest-main ${section === 'guests' && viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''}`}>
-        {section === 'guests' ? <>
+        {section === 'guests' && canAccessGuests ? <>
         <div className="guest-heading-row"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h1>Guests</h1><p>Keep track of families, replies, and stays.</p></div><button className="primary-button add-family-button" onClick={() => showEditor()}><Plus size={18} /> Add family</button></div>
         <section className="guest-summary" aria-label="Guest list summary"><div><Users size={16} /><strong>{guests.length}</strong><span>{guests.length === 1 ? 'family' : 'families'}</span></div><span className="summary-divider" /><div><strong>{guestTotal}</strong><span>guests</span></div><span className="summary-divider" /><div><strong>{inviteTotal}</strong><span>to invite</span></div><span className="summary-divider" /><div><strong>{waitingTotal}</strong><span>awaiting RSVP</span></div><span className="summary-divider" /><div><strong>{assignedRoomTotal}</strong><span>rooms assigned</span></div></section>
 
@@ -195,15 +235,15 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
           {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading families…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one family</h2><p>Add a family you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first family</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No families match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Families you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
           <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
         </div>
-        </> : <LodgingView guests={guests} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} />}
+        </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
       </main>
-      <nav className="mobile-workspace-nav" aria-label="Planning space sections"><button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button><button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button><button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
+      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
       </div>
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
       {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => setLodgingEditingGuest(null)} onSaved={guest => notifySaved(guest, true)} />}
       {detailsGuest && <GuestDetails guest={detailsGuest} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
-      {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} onClose={() => setPeopleOpen(false)} />}
+      {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} canInviteAdmins={canInviteAdmins} canInviteLodging={canInviteLodging} onClose={() => setPeopleOpen(false)} />}
       {toast && <div className="toast-message" role="status"><Check size={17} /> {toast}</div>}
     </div>
   )
@@ -217,12 +257,15 @@ type WorkspacePerson = {
   role_name: string
 }
 
-function LodgingView({ guests, loading, loadError, viewMode, onViewModeChange, onRetry, onEdit }: {
+type InviteRoleKey = 'admin' | 'lodging_manager'
+
+function LodgingView({ guests, loading, loadError, viewMode, onViewModeChange, canEdit, onRetry, onEdit }: {
   guests: GuestGroup[]
   loading: boolean
   loadError: string
   viewMode: ViewMode
   onViewModeChange: (viewMode: ViewMode) => void
+  canEdit: boolean
   onRetry: () => void
   onEdit: (guest: GuestGroup) => void
 }) {
@@ -236,8 +279,8 @@ function LodgingView({ guests, loading, loadError, viewMode, onViewModeChange, o
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading lodging…</div>
         : loadError ? <div className="guest-state error-state"><h2>Couldn’t load lodging</h2><p>Check your connection or workspace access, then try again.</p><button className="secondary-button" onClick={onRetry}>Try again</button></div>
           : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No families yet</h2><p>Add families in Guests, then record their stay and room details here.</p></div>
-            : viewMode === 'spreadsheet' ? <div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Family</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th><th className="lodging-action-heading"><span className="sr-only">Edit</span></th></tr></thead><tbody>{guests.map(guest => <tr key={guest.id}><th scope="row"><strong>{guest.family_name}</strong><small>{guest.contact_name || guest.phone || 'No contact added'}</small></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td><td className="lodging-action"><button className="sheet-edit-button" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={16} /></button></td></tr>)}</tbody></table><p className="spreadsheet-hint">Scroll sideways to see more columns.</p></div>
-              : <section className="lodging-card-list" aria-label="Lodging cards">{guests.map(guest => <article className="lodging-card" key={guest.id}><div className="lodging-card-heading"><div><h2>{guest.family_name}</h2><span>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span></div><button className="lodging-card-edit" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={17} /></button></div><dl className="lodging-card-details"><div><dt>Total rooms</dt><dd>{guest.room_count ?? 'Not set'}</dd></div><div><dt>Allotted room numbers</dt><dd>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || 'Not allotted'}</dd></div></dl></article>)}</section>}
+            : viewMode === 'spreadsheet' ? <div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Family</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th>{canEdit && <th className="lodging-action-heading"><span className="sr-only">Edit</span></th>}</tr></thead><tbody>{guests.map(guest => <tr key={guest.id}><th scope="row"><strong>{guest.family_name}</strong></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td>{canEdit && <td className="lodging-action"><button className="sheet-edit-button" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={16} /></button></td>}</tr>)}</tbody></table><p className="spreadsheet-hint">Scroll sideways to see more columns.</p></div>
+              : <section className="lodging-card-list" aria-label="Lodging cards">{guests.map(guest => <article className="lodging-card" key={guest.id}><div className="lodging-card-heading"><div><h2>{guest.family_name}</h2><span>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span></div>{canEdit && <button className="lodging-card-edit" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={17} /></button>}</div><dl className="lodging-card-details"><div><dt>Total rooms</dt><dd>{guest.room_count ?? 'Not set'}</dd></div><div><dt>Allotted room numbers</dt><dd>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || 'Not allotted'}</dd></div></dl></article>)}</section>}
     </div>
     {!loading && !loadError && guests.length > 0 && <footer className="guest-footer lodging-footer">Your lodging details are shared with people who have access to this planning space.</footer>}
   </>
@@ -260,19 +303,24 @@ function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
     if (!supabase) return
     setSaving(true)
     setError('')
-    const userId = (await supabase.auth.getUser()).data.user?.id ?? null
-    const { data, error: saveError } = await supabase.from('guest_groups').update({
-      guest_count: Number(guestCount),
-      room_count: roomCount === '' ? null : Number(roomCount),
-      assigned_room_numbers: roomNumbers.map(room => room.trim()).filter(Boolean),
-      updated_by: userId,
-    }).eq('workspace_id', workspaceId).eq('id', guest.id).select().single()
+    const { data, error: saveError } = await supabase.rpc('update_workspace_lodging', {
+      requested_workspace_id: workspaceId,
+      requested_guest_group_id: guest.id,
+      requested_guest_count: Number(guestCount),
+      requested_room_count: roomCount === '' ? null : Number(roomCount),
+      requested_room_numbers: roomNumbers.map(room => room.trim()).filter(Boolean),
+    })
     setSaving(false)
     if (saveError) {
       setError('Could not update these lodging details. Check your access and try again.')
       return
     }
-    onSaved(data as GuestGroup)
+    const updated = Array.isArray(data) ? data[0] : data
+    if (!updated) {
+      setError('Could not find this family in the selected planning space.')
+      return
+    }
+    onSaved({ ...guest, ...updated } as GuestGroup)
   }
 
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose() }}><section className="guest-dialog lodging-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="lodging-editor-title"><header className="dialog-header"><div><span className="guest-eyebrow">{guest.family_name}</span><h2 id="lodging-editor-title">Update lodging</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form className="guest-form lodging-editor-form" onSubmit={save}>
@@ -283,9 +331,11 @@ function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
     </form></section></div>
 }
 
-function WorkspacePeopleDialog({ workspaceId, workspaceName, onClose }: {
+function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, canInviteLodging, onClose }: {
   workspaceId: string
   workspaceName: string
+  canInviteAdmins: boolean
+  canInviteLodging: boolean
   onClose: () => void
 }) {
   const [members, setMembers] = useState<WorkspacePerson[]>([])
@@ -294,6 +344,16 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, onClose }: {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const inviteRoles: { key: InviteRoleKey; name: string }[] = [
+    ...(canInviteAdmins ? [{ key: 'admin' as const, name: 'Admin' }] : []),
+    ...(canInviteLodging ? [{ key: 'lodging_manager' as const, name: 'Lodging' }] : []),
+  ]
+  const [roleKey, setRoleKey] = useState<InviteRoleKey>(canInviteAdmins ? 'admin' : 'lodging_manager')
+  const selectedRoleName = inviteRoles.find(role => role.key === roleKey)?.name ?? inviteRoles[0]?.name ?? 'Lodging'
+
+  useEffect(() => {
+    if (!inviteRoles.some(role => role.key === roleKey) && inviteRoles[0]) setRoleKey(inviteRoles[0].key)
+  }, [canInviteAdmins, canInviteLodging, roleKey])
 
   async function loadMembers() {
     if (!supabase) return
@@ -347,7 +407,7 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, onClose }: {
     setError('')
     setMessage('')
     const { data, error: inviteError } = await supabase.functions.invoke('invite-workspace-admin', {
-      body: { workspaceId, email: email.trim() },
+      body: { workspaceId, email: email.trim(), roleKey },
     })
     if (inviteError) {
       let detail = inviteError.message
@@ -361,16 +421,17 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, onClose }: {
       return
     }
     setEmail('')
+    const accessLabel = roleKey === 'lodging_manager' ? 'Lodging' : 'Admin'
     setMessage(data?.status === 'added'
-      ? 'This person already had an account. Admin access was added; they can sign in to open the planning space.'
+      ? `This person already had an account. ${accessLabel} access was added; they can sign in to open the planning space.`
       : data?.status === 'pending_confirmation'
-        ? 'Admin access is ready and will work after this person confirms their existing account.'
+        ? `${accessLabel} access is ready and will work after this person confirms their existing account.`
         : 'Invitation sent. They can create their account from the email.')
     setSubmitting(false)
     await loadMembers()
   }
 
-  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span><strong>Admin</strong></div><p className="people-help">This adds Admin access to this planning space only. To add someone elsewhere, select that space and invite them separately. New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : 'Invite admin'}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span></li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
+  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span>{inviteRoles.length > 1 ? <select aria-label="Access level" value={roleKey} onChange={event => setRoleKey(event.target.value as InviteRoleKey)}>{inviteRoles.map(role => <option key={role.key} value={role.key}>{role.name}</option>)}</select> : <strong>{selectedRoleName}</strong>}</div><p className="people-help">{roleKey === 'lodging_manager' ? 'This gives access to guest counts, room totals, and allotted room numbers in this planning space. It does not include guest contacts, invitations, replies, or notes.' : 'This adds Admin access to this planning space only.'} New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting || inviteRoles.length === 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : `Invite ${selectedRoleName}`}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span></li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
 }
 
 function GuestCard({ guest, onOpen, onEdit }: { guest: GuestGroup; onOpen: () => void; onEdit: () => void }) {

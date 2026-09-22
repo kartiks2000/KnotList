@@ -14,7 +14,7 @@ The frontend only uses the Supabase publishable/anon key. Never put a service ro
 ## Set up Supabase auth, roles, and guest list
 
 1. Create a Supabase project and configure Auth email/password and email-confirmation settings to suit your launch.
-2. For a new project, apply the migrations in order: [`20260922000000_auth_rbac_foundation.sql`](supabase/migrations/20260922000000_auth_rbac_foundation.sql), [`20260922010000_guest_groups.sql`](supabase/migrations/20260922010000_guest_groups.sql), [`20260922020000_single_guest_count.sql`](supabase/migrations/20260922020000_single_guest_count.sql), [`20260922030000_room_assignments.sql`](supabase/migrations/20260922030000_room_assignments.sql), and [`20260922040000_workspace_admin_invites.sql`](supabase/migrations/20260922040000_workspace_admin_invites.sql). If you already applied earlier migrations, run only the migrations you have not applied, in order. Run each migration once.
+2. For a new project, apply the migrations in order: [`20260922000000_auth_rbac_foundation.sql`](supabase/migrations/20260922000000_auth_rbac_foundation.sql), [`20260922010000_guest_groups.sql`](supabase/migrations/20260922010000_guest_groups.sql), [`20260922020000_single_guest_count.sql`](supabase/migrations/20260922020000_single_guest_count.sql), [`20260922030000_room_assignments.sql`](supabase/migrations/20260922030000_room_assignments.sql), [`20260922040000_workspace_admin_invites.sql`](supabase/migrations/20260922040000_workspace_admin_invites.sql), and [`20260922050000_lodging_access_role.sql`](supabase/migrations/20260922050000_lodging_access_role.sql). If you already applied earlier migrations, run only the migrations you have not applied, in order. Run each migration once.
 3. Create your first account from the app and confirm its email if confirmation is enabled.
 4. In the Supabase SQL Editor, edit and run [`supabase/bootstrap/first_super_admin.sql`](supabase/bootstrap/first_super_admin.sql) with that account's email. Keep super-admin bootstrap restricted to trusted project operators.
 5. Sign in as the super admin and create a planning space in the app. The guest list is scoped to that workspace.
@@ -22,7 +22,7 @@ The frontend only uses the Supabase publishable/anon key. Never put a service ro
 
 ## Invite people to a planning space
 
-Only super admins can invite people from the **People** button. Each invite targets the currently selected planning space and assigns Admin access. New accounts receive a Supabase Auth invitation email; existing accounts are added directly and can sign in to access that workspace. A user can belong to multiple planning spaces by being invited to each one separately. Memberships use `role_id`, so additional workspace roles can be introduced later without changing membership records.
+Workspace admins can invite Lodging users to the currently selected planning space; only super admins can invite Admin users. Lodging users can see and update guest counts and room assignments through restricted database functions. They cannot access guest contacts, invitation or RSVP details, or notes. New accounts receive a Supabase Auth invitation email; existing accounts are added directly. A user can belong to multiple planning spaces by being invited to each one separately. Memberships use `role_id`, so additional workspace roles can be introduced later without changing membership records.
 
 Deploy the trusted Edge Function after linking the Supabase CLI to your project:
 
