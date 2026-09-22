@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { CalendarDays, Check, ChevronDown, ChevronRight, Edit3, Heart, LoaderCircle, Mail, Plus, Search, Table2, Users, X } from 'lucide-react'
+import { CalendarDays, Check, ChevronDown, ChevronRight, Edit3, Heart, LoaderCircle, Mail, Plus, Search, Table2, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
@@ -81,6 +81,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
   const [editingGuest, setEditingGuest] = useState<GuestGroup | null>(null)
   const [detailsGuest, setDetailsGuest] = useState<GuestGroup | null>(null)
   const [toast, setToast] = useState('')
+  const [canManagePeople, setCanManagePeople] = useState(false)
+  const [peopleOpen, setPeopleOpen] = useState(false)
 
   async function loadGuests() {
     if (!supabase) return
@@ -104,6 +106,19 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
     setEditorOpen(false)
     setDetailsGuest(null)
     void loadGuests()
+  }, [workspaceId])
+
+  useEffect(() => {
+    let alive = true
+    setCanManagePeople(false)
+    if (!supabase) return () => { alive = false }
+    void supabase.rpc('has_permission', {
+      requested_permission: 'users.manage',
+      requested_workspace_id: workspaceId,
+    }).then(({ data, error }) => {
+      if (alive) setCanManagePeople(!error && data === true)
+    })
+    return () => { alive = false }
   }, [workspaceId])
 
   const filteredGuests = useMemo(() => {
@@ -145,7 +160,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
         <a className="brand guest-brand" href="#home"><span className="brand-mark"><Heart size={17} strokeWidth={1.8} /></span><span>knotlist</span></a>
         <label className="workspace-picker-label" htmlFor="workspace-select">Planning space</label>
         <div className="workspace-picker-wrap"><select id="workspace-select" className="workspace-picker" value={workspaceId} onChange={event => onWorkspaceChange(event.target.value)} aria-label="Planning space">{workspaces.map(workspace => <option value={workspace.id} key={workspace.id}>{workspace.name}</option>)}</select>{workspaces.length > 1 && <ChevronDown size={15} />}</div>
-        <div className="account-area"><span>{accountEmail}</span><button className="account-signout" onClick={onSignOut}>Sign out</button></div>
+        <div className="account-area">{canManagePeople && <button className="manage-people-button" onClick={() => setPeopleOpen(true)} aria-label="Manage people in this planning space" title="Manage people"><UserPlus size={16} /><span>People</span></button>}<span>{accountEmail}</span><button className="account-signout" onClick={onSignOut}>Sign out</button></div>
       </header>
 
       <main className={`guest-main ${viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''}`}>
@@ -166,9 +181,108 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, accountE
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
       {detailsGuest && <GuestDetails guest={detailsGuest} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
+      {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} onClose={() => setPeopleOpen(false)} />}
       {toast && <div className="toast-message" role="status"><Check size={17} /> {toast}</div>}
     </div>
   )
+}
+
+type WorkspacePerson = {
+  id: string
+  email: string
+  display_name: string
+  email_confirmed_at: string | null
+  role_name: string
+}
+
+function WorkspacePeopleDialog({ workspaceId, workspaceName, onClose }: {
+  workspaceId: string
+  workspaceName: string
+  onClose: () => void
+}) {
+  const [members, setMembers] = useState<WorkspacePerson[]>([])
+  const [membersLoading, setMembersLoading] = useState(true)
+  const [email, setEmail] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  async function loadMembers() {
+    if (!supabase) return
+    setMembersLoading(true)
+    setError('')
+    const { data: membershipRows, error: membershipError } = await supabase
+      .from('workspace_memberships')
+      .select('id, user_id, role_id')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: true })
+    if (membershipError) {
+      setError('Could not load people. Apply the workspace invitation migration and try again.')
+      setMembersLoading(false)
+      return
+    }
+
+    const rows = membershipRows ?? []
+    const userIds = [...new Set(rows.map(row => row.user_id))]
+    const roleIds = [...new Set(rows.map(row => row.role_id))]
+    const [profilesResult, rolesResult] = await Promise.all([
+      userIds.length ? supabase.from('profiles').select('id, email, display_name, email_confirmed_at').in('id', userIds) : Promise.resolve({ data: [], error: null }),
+      roleIds.length ? supabase.from('roles').select('id, name').in('id', roleIds) : Promise.resolve({ data: [], error: null }),
+    ])
+    if (profilesResult.error || rolesResult.error) {
+      setError('Could not load member details. Check that the workspace invitation migration is applied.')
+      setMembersLoading(false)
+      return
+    }
+    const profiles = profilesResult.data ?? []
+    const roles = rolesResult.data ?? []
+    setMembers(rows.map(row => {
+      const profile = profiles.find(item => item.id === row.user_id)
+      const role = roles.find(item => item.id === row.role_id)
+      return {
+        id: row.id,
+        email: profile?.email ?? '',
+        display_name: profile?.display_name ?? '',
+        email_confirmed_at: profile?.email_confirmed_at ?? null,
+        role_name: role?.name ?? 'Member',
+      }
+    }))
+    setMembersLoading(false)
+  }
+
+  useEffect(() => { void loadMembers() }, [workspaceId])
+
+  async function invitePerson(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase) return
+    setSubmitting(true)
+    setError('')
+    setMessage('')
+    const { data, error: inviteError } = await supabase.functions.invoke('invite-workspace-admin', {
+      body: { workspaceId, email: email.trim() },
+    })
+    if (inviteError) {
+      let detail = inviteError.message
+      const context = (inviteError as { context?: unknown }).context
+      if (context instanceof Response) {
+        const body = await context.clone().json().catch(() => null) as { error?: string } | null
+        if (body?.error) detail = body.error
+      }
+      setError(detail || 'Could not send the invitation. Try again.')
+      setSubmitting(false)
+      return
+    }
+    setEmail('')
+    setMessage(data?.status === 'added'
+      ? 'This person already had an account. Admin access was added; they can sign in to open the planning space.'
+      : data?.status === 'pending_confirmation'
+        ? 'Admin access is ready and will work after this person confirms their existing account.'
+        : 'Invitation sent. They can create their account from the email.')
+    setSubmitting(false)
+    await loadMembers()
+  }
+
+  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span><strong>Admin</strong></div><p className="people-help">This adds Admin access to this planning space only. To add someone elsewhere, select that space and invite them separately. New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : 'Invite admin'}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span></li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
 }
 
 function GuestCard({ guest, onOpen, onEdit }: { guest: GuestGroup; onOpen: () => void; onEdit: () => void }) {

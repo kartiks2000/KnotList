@@ -14,11 +14,24 @@ The frontend only uses the Supabase publishable/anon key. Never put a service ro
 ## Set up Supabase auth, roles, and guest list
 
 1. Create a Supabase project and configure Auth email/password and email-confirmation settings to suit your launch.
-2. For a new project, apply the migrations in order: [`20260922000000_auth_rbac_foundation.sql`](supabase/migrations/20260922000000_auth_rbac_foundation.sql), [`20260922010000_guest_groups.sql`](supabase/migrations/20260922010000_guest_groups.sql), [`20260922020000_single_guest_count.sql`](supabase/migrations/20260922020000_single_guest_count.sql), and [`20260922030000_room_assignments.sql`](supabase/migrations/20260922030000_room_assignments.sql). If you already applied earlier migrations, run only the migrations you have not applied, in order. Run each migration once.
+2. For a new project, apply the migrations in order: [`20260922000000_auth_rbac_foundation.sql`](supabase/migrations/20260922000000_auth_rbac_foundation.sql), [`20260922010000_guest_groups.sql`](supabase/migrations/20260922010000_guest_groups.sql), [`20260922020000_single_guest_count.sql`](supabase/migrations/20260922020000_single_guest_count.sql), [`20260922030000_room_assignments.sql`](supabase/migrations/20260922030000_room_assignments.sql), and [`20260922040000_workspace_admin_invites.sql`](supabase/migrations/20260922040000_workspace_admin_invites.sql). If you already applied earlier migrations, run only the migrations you have not applied, in order. Run each migration once.
 3. Create your first account from the app and confirm its email if confirmation is enabled.
 4. In the Supabase SQL Editor, edit and run [`supabase/bootstrap/first_super_admin.sql`](supabase/bootstrap/first_super_admin.sql) with that account's email. Keep super-admin bootstrap restricted to trusted project operators.
 5. Sign in as the super admin and create a planning space in the app. The guest list is scoped to that workspace.
 6. Restart the Vite server after editing `.env.local`.
+
+## Invite people to a planning space
+
+Only super admins can invite people from the **People** button. Each invite targets the currently selected planning space and assigns Admin access. New accounts receive a Supabase Auth invitation email; existing accounts are added directly and can sign in to access that workspace. A user can belong to multiple planning spaces by being invited to each one separately. Memberships use `role_id`, so additional workspace roles can be introduced later without changing membership records.
+
+Deploy the trusted Edge Function after linking the Supabase CLI to your project:
+
+```sh
+supabase functions deploy invite-workspace-admin
+supabase secrets set APP_URL="http://localhost:5174"
+```
+
+Set `APP_URL` to the app's public origin in production. Add that origin to Supabase Auth's allowed redirect URLs. The function uses Supabase's server-side Auth admin API; never add a service-role or secret key to `.env.local` or browser code.
 
 Public signup only creates an authenticated user and profile. It does not create a workspace, assign roles, or grant access to wedding data. The initial super admin is deliberately assigned through a trusted SQL operation rather than a browser flow.
 
@@ -35,10 +48,9 @@ Only the super admin can currently create role definitions, grant platform roles
 
 ## Planned follow-on auth work
 
-1. Add secure invitations and membership management using a Supabase Edge Function or trusted backend; never expose the service role key in the client.
-2. Add password reset, account settings, and session recovery UX.
+1. Add password reset, account settings, and session recovery UX.
+2. Add role-aware membership changes and removal through the trusted backend.
 3. Add generated Supabase database types and use them in the browser client.
-4. Add role-aware workspace membership and invitation management through a trusted backend.
-5. Add future product tables with workspace foreign keys, indexes, RLS read/write policies, and permission checks from day one.
+4. Add future product tables with workspace foreign keys, indexes, RLS read/write policies, and permission checks from day one.
 
-The app includes sign-in, sign-up, session display, sign-out, workspace creation for super admins, and guest-family list and edit flows. It does not yet invite users or provide an interface for role and membership administration.
+The app includes sign-in, sign-up, session display, sign-out, workspace creation for super admins, admin invitations, workspace people listing, and guest-family list and edit flows. Workspace role changes and member removal are not yet available.
