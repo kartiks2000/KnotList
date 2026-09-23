@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import type { GuestGroup } from './GuestList'
 
 const bucket = 'whatsapp-invite-media'
-const starterMessage = 'Hi {guest}! We would love to invite you to {workspace}. We hope you can join us!'
+const starterMessage = 'We would love for you to join us as we celebrate our wedding. We hope you can be there!'
 
 type SavedTemplate = {
   workspace_id: string
@@ -24,14 +24,20 @@ function safeFileName(name: string) {
   return name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'invite-media'
 }
 
+function removePersonalizationTokens(value: string) {
+  if (value === 'Hi {guest}! We would love to invite you to {workspace}. We hope you can join us!') return starterMessage
+  return value.replaceAll('{guest}', '').replaceAll('{workspace}', '').replace(/\s+/g, ' ').replace(/\s+([,.!?])/g, '$1').trim()
+}
+
 function whatsappUrl(message: string) {
   return `https://wa.me/?text=${encodeURIComponent(message)}`
 }
 
-export function WhatsAppInvites({ workspaceId, workspaceName, guests }: {
+export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvitationSent }: {
   workspaceId: string
   workspaceName: string
   guests: GuestGroup[]
+  onMarkInvitationSent: (guestId: string, sentAt: string) => Promise<boolean>
 }) {
   const [template, setTemplate] = useState(starterMessage)
   const [savedTemplate, setSavedTemplate] = useState<SavedTemplate | null>(null)
@@ -74,7 +80,7 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests }: {
       }
       const saved = data as SavedTemplate
       setSavedTemplate(saved)
-      setTemplate(saved.message)
+      setTemplate(removePersonalizationTokens(saved.message))
       setMediaChanged(false)
       setRemoveSavedMedia(false)
       if (saved.media_path) {
@@ -96,9 +102,7 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests }: {
   }, [workspaceId])
 
   const selectedGuest = useMemo(() => guests.find(guest => guest.id === selectedGuestId), [guests, selectedGuestId])
-  const message = useMemo(() => template
-    .replaceAll('{workspace}', workspaceName)
-    .replaceAll('{guest}', selectedGuest?.contact_name || selectedGuest?.family_name || 'there'), [template, workspaceName, selectedGuest])
+  const message = template
   const attachmentName = mediaFile?.name ?? (!removeSavedMedia ? savedTemplate?.media_file_name : null)
   const templateHasAttachment = Boolean(attachmentName)
   const templateIsDirty = !savedTemplate || template !== savedTemplate.message || mediaChanged || removeSavedMedia
@@ -182,22 +186,49 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests }: {
       const shareData: ShareData = { title: `${workspaceName} invitation`, text: message, files: [mediaFile] }
       if (webShare.share && webShare.canShare?.({ files: [mediaFile] })) {
         setSharing(true)
+        const sentAt = new Date().toISOString()
+        const trackingPromise = selectedGuest ? onMarkInvitationSent(selectedGuest.id, sentAt).catch(() => false) : Promise.resolve(null)
+        let shareFailed = false
+        let shareCancelled = false
         try {
           await webShare.share.call(navigator, shareData)
-          setNotice('Choose WhatsApp in the share options, then select a contact.')
         } catch (shareError) {
-          if (shareError instanceof DOMException && shareError.name === 'AbortError') return
-          setShowAttachmentFallback(true)
+          shareCancelled = shareError instanceof DOMException && shareError.name === 'AbortError'
+          shareFailed = !shareCancelled
         } finally {
           setSharing(false)
         }
+        const tracked = await trackingPromise
+        if (shareFailed) setShowAttachmentFallback(true)
+        setTrackingStatus(tracked, sentAt, shareCancelled ? 'The share sheet was closed.' : 'Sharing started.')
         return
       }
       setShowAttachmentFallback(true)
       return
     }
     window.open(whatsappUrl(message), '_blank', 'noopener,noreferrer')
-    setNotice('WhatsApp opened with your message. Choose a contact to send it.')
+    const sentAt = new Date().toISOString()
+    const tracked = selectedGuest ? await onMarkInvitationSent(selectedGuest.id, sentAt).catch(() => false) : null
+    setTrackingStatus(tracked, sentAt, 'WhatsApp opened with your message.')
+  }
+
+  function setTrackingStatus(tracked: boolean | null, sentAt: string, prefix: string) {
+    if (tracked === false) {
+      setError(`${prefix} KnotList could not save the guest’s invite status. Please update it from the guest details.`)
+      return
+    }
+    if (tracked === true && selectedGuest) {
+      setNotice(`${selectedGuest.contact_name || selectedGuest.family_name} marked as invited at ${new Date(sentAt).toLocaleString()}. WhatsApp can’t confirm delivery.`)
+      return
+    }
+    setNotice(`${prefix} Choose a guest first if you want KnotList to record the invite timestamp. WhatsApp can’t confirm delivery.`)
+  }
+
+  async function openWhatsAppFromFallback() {
+    window.open(whatsappUrl(message), '_blank', 'noopener,noreferrer')
+    const sentAt = new Date().toISOString()
+    const tracked = selectedGuest ? await onMarkInvitationSent(selectedGuest.id, sentAt).catch(() => false) : null
+    setTrackingStatus(tracked, sentAt, 'WhatsApp opened with your message.')
   }
 
   function downloadAttachment() {
@@ -214,16 +245,15 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests }: {
     <header className="guest-heading-row whatsapp-heading"><div><span className="guest-eyebrow">GUEST INVITES</span><h1>Invite</h1><p>Save a message and optional media to reuse when inviting guests.</p></div></header>
     <div className="whatsapp-editor">
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading invitation…</div> : <>
-        <label className="form-field whatsapp-message-field">Invitation message<textarea rows={7} maxLength={3000} value={template} onChange={event => setTemplate(event.target.value)} placeholder="Write your invitation…" /></label>
-        <div className="whatsapp-template-help">Use <code>{'{guest}'}</code> and <code>{'{workspace}'}</code> to personalize the message. {selectedGuest ? 'The guest name will be filled in below.' : 'Without a guest selected, the greeting uses “there”.'}</div>
-        <label className="form-field whatsapp-guest-field">Personalize for a guest <span className="optional-label">optional</span><select value={selectedGuestId} onChange={event => setSelectedGuestId(event.target.value)}><option value="">No guest selected</option>{guests.map(guest => <option value={guest.id} key={guest.id}>{guest.contact_name || guest.family_name}</option>)}</select></label>
+        <label className="form-field whatsapp-message-field">Invitation message<textarea rows={5} maxLength={3000} value={template} onChange={event => setTemplate(event.target.value)} placeholder="Write your invitation…" /></label>
+        <label className="form-field whatsapp-guest-field">Select guest to track invitation <span className="optional-label">optional</span><select value={selectedGuestId} onChange={event => setSelectedGuestId(event.target.value)}><option value="">No guest selected</option>{guests.map(guest => <option value={guest.id} key={guest.id}>{guest.contact_name ? `${guest.contact_name} · ${guest.family_name}` : guest.family_name}</option>)}</select></label>
         <div className="whatsapp-preview"><span>MESSAGE PREVIEW</span><p>{message || 'Your invitation preview will appear here.'}</p></div>
         <div className="whatsapp-media-row"><div className="whatsapp-media-copy"><strong>Image or video</strong><small>{attachmentName || 'Optional · up to 20 MB'}</small></div>{attachmentName && <button type="button" className="whatsapp-remove-media" aria-label="Remove attached media" title="Remove attachment" onClick={() => { setMediaFile(null); setMediaChanged(false); setRemoveSavedMedia(Boolean(savedTemplate?.media_path)) }}><X size={16} /></button>}<label className="secondary-button whatsapp-attach-button"><ImagePlus size={16} />{attachmentName ? 'Change media' : 'Add media'}<input type="file" accept="image/*,video/*" onChange={event => void chooseMedia(event)} /></label></div>
         {attachmentName && <div className="whatsapp-file-note">{(mediaFile?.type ?? savedTemplate?.media_mime_type ?? '').startsWith('video/') ? <Video size={15} /> : <ImagePlus size={15} />} This file is saved with the template. On supported browsers, use the share sheet to choose WhatsApp and a contact.</div>}
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p className="form-message" role="status">{notice}</p>}
         <div className="whatsapp-actions"><button type="button" className="secondary-button" onClick={() => void saveTemplate()} disabled={saving || loading}>{saving ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}{saving ? 'Saving…' : templateIsDirty ? 'Save template' : 'Save changes'}</button><button type="button" className="primary-button" onClick={() => void shareInvitation()} disabled={loading || sharing || !template.trim()}>{sharing ? <LoaderCircle className="spin" size={16} /> : <MessageCircle size={17} />}{sharing ? 'Opening share options…' : templateHasAttachment ? 'Share message and media' : 'Open WhatsApp'}</button></div>
-        {showAttachmentFallback && mediaFile && <div className="whatsapp-fallback" role="status"><div><strong>Your browser can’t attach media to WhatsApp directly.</strong><p>Download the file, then open WhatsApp with the message and attach it in the chat.</p></div><button type="button" className="secondary-button" onClick={downloadAttachment}>Download media</button><a className="secondary-button" href={whatsappUrl(message)} target="_blank" rel="noreferrer">Open WhatsApp</a></div>}
+        {showAttachmentFallback && mediaFile && <div className="whatsapp-fallback" role="status"><div><strong>Your browser can’t attach media to WhatsApp directly.</strong><p>Download the file, then open WhatsApp with the message and attach it in the chat.</p></div><button type="button" className="secondary-button" onClick={downloadAttachment}>Download media</button><button type="button" className="secondary-button" onClick={() => void openWhatsAppFromFallback()}>Open WhatsApp</button></div>}
       </>}
     </div>
     <footer className="guest-footer">Messages are prepared in KnotList. WhatsApp opens separately so you can choose who receives each invitation.</footer>
