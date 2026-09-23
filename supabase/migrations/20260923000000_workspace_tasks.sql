@@ -139,6 +139,9 @@ create policy "Workspace task managers can update tasks"
   on public.workspace_tasks for update to authenticated
   using (public.has_permission('tasks.manage', workspace_id))
   with check (public.has_permission('tasks.manage', workspace_id));
+create policy "Workspace task managers can delete tasks"
+  on public.workspace_tasks for delete to authenticated
+  using (public.has_permission('tasks.manage', workspace_id));
 
 create policy "Workspace task readers can read comments"
   on public.workspace_task_comments for select to authenticated
@@ -154,7 +157,7 @@ create policy "Workspace members can add task comments"
     )
   );
 
-grant select, insert, update on public.workspace_tasks to authenticated;
+grant select, insert, update, delete on public.workspace_tasks to authenticated;
 grant select, insert on public.workspace_task_comments to authenticated;
 
 create or replace function public.set_workspace_task_completion(
