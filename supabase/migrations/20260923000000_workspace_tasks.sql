@@ -19,6 +19,8 @@ create table public.workspace_tasks (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   title text not null check (length(trim(title)) between 1 and 180),
+  description text not null default '',
+  constraint workspace_tasks_description_length_check check (length(description) <= 2000),
   assigned_to uuid references auth.users (id) on delete set null,
   deadline date,
   is_completed boolean not null default false,
