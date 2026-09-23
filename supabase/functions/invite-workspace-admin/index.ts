@@ -13,6 +13,18 @@ function response(body: Record<string, unknown>, status = 200) {
   })
 }
 
+async function findAuthUserByEmail(adminClient: ReturnType<typeof createClient>, email: string) {
+  const perPage = 1000
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage })
+    if (error) throw error
+    const match = data.users.find(user => user.email?.toLowerCase() === email)
+    if (match) return match
+    if (data.users.length < perPage) return null
+  }
+  return null
+}
+
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return response({ error: 'Method not allowed.' }, 405)
@@ -120,9 +132,36 @@ Deno.serve(async request => {
   })
   if (inviteError || !inviteData.user) {
     const alreadyRegistered = inviteError?.message.toLowerCase().includes('already')
+    if (alreadyRegistered) {
+      let existingAuthUser
+      try {
+        existingAuthUser = await findAuthUserByEmail(adminClient, email)
+      } catch {
+        return response({ error: 'This email already has an account, but KnotList could not look it up. Try again shortly.' }, 500)
+      }
+
+      if (existingAuthUser) {
+        const { error: profileUpsertError } = await adminClient.from('profiles').upsert({
+          id: existingAuthUser.id,
+          display_name: typeof existingAuthUser.user_metadata?.display_name === 'string' ? existingAuthUser.user_metadata.display_name : '',
+          email: existingAuthUser.email?.toLowerCase() ?? email,
+          email_confirmed_at: existingAuthUser.email_confirmed_at,
+        }, { onConflict: 'id' })
+        if (profileUpsertError) return response({ error: 'The existing account was found, but its profile could not be prepared for workspace access.' }, 500)
+
+        const { error: existingMembershipError } = await adminClient.from('workspace_memberships').insert({
+          workspace_id: workspaceId,
+          user_id: existingAuthUser.id,
+          role_id: selectedRole.id,
+        })
+        if (existingMembershipError?.code === '23505') return response({ error: 'That person is already a member of this planning space.' }, 409)
+        if (existingMembershipError) return response({ error: 'The existing account was found, but could not be added to the planning space.' }, 500)
+        return response({ status: 'added', email, roleKey })
+      }
+    }
     return response({
       error: alreadyRegistered
-        ? 'This email already has an account. Ask them to sign in, then invite that account again.'
+        ? 'This email already has an account, but KnotList could not match it to the invitation. Confirm the email address and try again.'
         : 'Supabase could not send the invitation. Check Auth email settings and try again.',
     }, 400)
   }
