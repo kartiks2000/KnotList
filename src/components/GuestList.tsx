@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { TasksView } from './TasksView'
 import { GuestDocuments, uploadGuestDocuments } from './GuestDocuments'
 import { WhatsAppInvites } from './WhatsAppInvites'
+import { WorkspaceNotifications } from './WorkspaceNotifications'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
 type Filter = 'all' | 'invite' | 'rsvp' | 'confirmed'
@@ -28,6 +29,7 @@ export type GuestGroup = {
   invitation_call_made: boolean
   last_called_at: string | null
   rsvp_status: RsvpStatus
+  last_rsvp_notification_event_id?: string | null
   check_in_at: string | null
   check_out_at: string | null
   checked_in: boolean
@@ -335,6 +337,10 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       return
     }
     setGuests(current => current.map(item => item.id === key ? { ...item, ...updated } : item))
+    if (updated.notification_event_id) {
+      // Persisted in-app alerts are created by the status RPC; this sends best-effort browser push.
+      void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId: updated.notification_event_id } })
+    }
   }
 
   async function markInvitationSentFromShare(guestId: string, sentAt: string) {
@@ -419,7 +425,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
         <a className="brand guest-brand" href="#home"><span className="brand-mark"><Heart size={17} strokeWidth={1.8} /></span><span>knotlist</span></a>
         <label className="workspace-picker-label" htmlFor="workspace-select">Planning space</label>
         <div className="workspace-picker-wrap"><select id="workspace-select" className="workspace-picker" value={workspaceId} onChange={event => onWorkspaceChange(event.target.value)} aria-label="Planning space">{workspaces.map(workspace => <option value={workspace.id} key={workspace.id}>{workspace.name}</option>)}</select>{workspaces.length > 1 && <ChevronDown size={15} />}</div>
-        <div className="account-area">{canManagePeople && <button className="manage-people-button" onClick={() => setPeopleOpen(true)} aria-label="Manage people in this planning space" title="Manage people"><UserPlus size={16} /><span>People</span></button>}<span>{accountEmail}</span><button className="account-signout" onClick={onSignOut}>Sign out</button></div>
+        <div className="account-area"><WorkspaceNotifications workspaceId={workspaceId} />{canManagePeople && <button className="manage-people-button" onClick={() => setPeopleOpen(true)} aria-label="Manage people in this planning space" title="Manage people"><UserPlus size={16} /><span>People</span></button>}<span>{accountEmail}</span><button className="account-signout" onClick={onSignOut}>Sign out</button></div>
       </header>
 
       <div className="planning-workspace-layout">
@@ -453,7 +459,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
         </div>
         </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} savingStatuses={savingLodgingStatuses} onStatusChange={updateLodgingStatus} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} onViewDocuments={setLodgingDocumentsGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : section === 'tasks' && canAccessTasks ? <TasksView workspaceId={workspaceId} canManage={canManageTasks} /> : section === 'whatsapp' && canManageGuests ? <WhatsAppInvites workspaceId={workspaceId} workspaceName={workspaceName} guests={guests} onMarkInvitationSent={markInvitationSentFromShare} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
       </main>
-      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => selectSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => selectSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => selectSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => selectSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}{canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => selectSection('whatsapp')}><MessageCircle size={18} /><span>Invite</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
+      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => selectSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => selectSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => selectSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => selectSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}{canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => selectSection('whatsapp')}><MessageCircle size={18} /><span>Invite</span></button>}<button className="mobile-spaces-nav" onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
       </div>
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={(guest, documentStatus) => notifySaved(guest, Boolean(editingGuest), documentStatus)} />}
@@ -891,6 +897,9 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
       return
     }
     const savedGuest = result.data as GuestGroup
+    if (guest && guest.rsvp_status !== savedGuest.rsvp_status && savedGuest.rsvp_status !== 'pending' && savedGuest.last_rsvp_notification_event_id) {
+      void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId: savedGuest.last_rsvp_notification_event_id } })
+    }
     let documentStatus = ''
     if (documentFiles.length > 0) {
       const { uploadedCount, error: uploadError } = await uploadGuestDocuments(workspaceId, savedGuest.id, documentFiles)
