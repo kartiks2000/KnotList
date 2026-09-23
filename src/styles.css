@@ -242,6 +242,12 @@
 @media(max-width:650px){.guest-main.whatsapp-main{display:block;overflow-y:auto;padding:10px 14px calc(76px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}.whatsapp-page{min-height:0}.whatsapp-page>.guest-footer{margin-top:8px}}
 
 .notification-backdrop{display:none}
+.notification-header-actions{display:flex;align-items:center;gap:5px;flex:0 0 auto}
+.notification-header-actions>button{height:30px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:#879084;cursor:pointer}
+.notification-header-actions>button:hover{background:#f2f3ee}
+.notification-header-actions .notification-mark-all{padding:0 7px;color:#607660;font-size:9px;font-weight:600;white-space:nowrap}
+.notification-header-actions .notification-mark-all:disabled,.notification-header-actions .notification-delete-all:disabled{opacity:.55;cursor:wait}
+.notification-header-actions .notification-delete-all{width:30px;color:#96766f}
 @media(max-width:650px){
   .notification-backdrop{position:fixed;inset:0;z-index:29;display:block;border:0;background:#25302755;}
   .notification-popover{position:fixed;top:auto;right:0;bottom:calc(58px + env(safe-area-inset-bottom));left:0;width:100%;max-height:min(72dvh,620px);display:flex;flex-direction:column;border-radius:16px 16px 0 0;box-shadow:0 -12px 38px #30383022}

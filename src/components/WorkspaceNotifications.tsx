@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bell, Check, LoaderCircle, X } from 'lucide-react'
+import { Bell, Check, LoaderCircle, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 type WorkspaceNotification = {
@@ -41,6 +41,8 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
   const [open, setOpen] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
+  const [markingAllRead, setMarkingAllRead] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -182,6 +184,49 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
     if (error) void loadNotifications()
   }
 
+  async function markAllRead() {
+    if (!supabase || unreadCount === 0 || markingAllRead) return
+    setMarkingAllRead(true)
+    const readAt = new Date().toISOString()
+    setNotifications(current => current.map(item => item.read_at ? item : { ...item, read_at: readAt }))
+    try {
+      const { error } = await supabase.from('workspace_notifications')
+        .update({ read_at: readAt })
+        .eq('workspace_id', workspaceId)
+        .is('read_at', null)
+      if (error) {
+        setMessage('Could not mark notifications as read. Please try again.')
+        void loadNotifications()
+      }
+    } catch {
+      setMessage('Could not mark notifications as read. Please try again.')
+      void loadNotifications()
+    } finally {
+      setMarkingAllRead(false)
+    }
+  }
+
+  async function deleteAll() {
+    if (!supabase || notifications.length === 0 || deletingAll) return
+    if (!window.confirm('Delete all notifications in this planning space from your inbox? This won’t affect anyone else’s inbox.')) return
+    setDeletingAll(true)
+    setNotifications([])
+    try {
+      const { error } = await supabase.from('workspace_notifications')
+        .delete()
+        .eq('workspace_id', workspaceId)
+      if (error) {
+        setMessage('Could not delete notifications. Please try again.')
+        void loadNotifications()
+      }
+    } catch {
+      setMessage('Could not delete notifications. Please try again.')
+      void loadNotifications()
+    } finally {
+      setDeletingAll(false)
+    }
+  }
+
   const unreadCount = notifications.reduce((count, item) => count + (item.read_at ? 0 : 1), 0)
   const canPush = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 
@@ -197,7 +242,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
     </button>
     {open && <button type="button" className="notification-backdrop" aria-label="Close notifications" onClick={() => setOpen(false)} />}
     {open && <section className="notification-popover" aria-label="Notifications">
-      <header className="notification-popover-header"><div><strong>Notifications</strong><small>{unreadCount ? `${unreadCount} unread` : 'Lodging and RSVP updates'}</small></div><button type="button" onClick={() => setOpen(false)} aria-label="Close notifications"><X size={17} /></button></header>
+      <header className="notification-popover-header"><div><strong>Notifications</strong><small>{unreadCount ? `${unreadCount} unread` : 'Lodging and RSVP updates'}</small></div><div className="notification-header-actions">{unreadCount > 0 && <button type="button" className="notification-mark-all" disabled={markingAllRead} onClick={() => void markAllRead()}>{markingAllRead ? 'Marking…' : 'Mark all read'}</button>}{notifications.length > 0 && <button type="button" className="notification-delete-all" disabled={deletingAll} onClick={() => void deleteAll()} aria-label="Delete all notifications" title="Delete all notifications"><Trash2 size={14} /></button>}<button type="button" onClick={() => setOpen(false)} aria-label="Close notifications"><X size={17} /></button></div></header>
       <div className="notification-push-setting">
         <div><strong>Browser push</strong><small>{pushEnabled ? 'Enabled on this device' : 'Get planning updates when KnotList is closed'}</small></div>
         {!canPush ? <span className="notification-unavailable">Unsupported</span> : <button type="button" className="notification-push-button" disabled={pushBusy} onClick={() => void (pushEnabled ? disablePush() : enablePush())}>{pushBusy ? <LoaderCircle className="spin" size={14} /> : pushEnabled ? 'Turn off' : 'Enable'}</button>}
