@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
-import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, Gift, Heart, ListChecks, LoaderCircle, Mail, Phone, Plus, Search, Table2, Trash2, UserPlus, Users, X } from 'lucide-react'
+import type { ChangeEvent, FormEvent } from 'react'
+import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, Gift, Heart, ListChecks, LoaderCircle, Mail, Phone, Plus, Search, Table2, Trash2, Upload, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { TasksView } from './TasksView'
-import { GuestDocuments } from './GuestDocuments'
+import { GuestDocuments, uploadGuestDocuments } from './GuestDocuments'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
 type Filter = 'all' | 'invite' | 'rsvp' | 'confirmed'
@@ -334,13 +334,13 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setEditorOpen(true)
   }
 
-  function notifySaved(guest: GuestGroup, wasEditing: boolean) {
+  function notifySaved(guest: GuestGroup, wasEditing: boolean, documentStatus = '') {
     setEditorOpen(false)
     setEditingGuest(null)
     setLodgingEditingGuest(null)
     setDetailsGuest(null)
-    setToast(`${guest.family_name} ${wasEditing ? 'saved' : 'added'}`)
-    window.setTimeout(() => setToast(''), 3000)
+    setToast(documentStatus || `${guest.family_name} ${wasEditing ? 'saved' : 'added'}`)
+    window.setTimeout(() => setToast(''), documentStatus ? 6500 : 3000)
     void loadGuests()
   }
 
@@ -386,7 +386,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => setSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
       </div>
 
-      {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
+      {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={(guest, documentStatus) => notifySaved(guest, Boolean(editingGuest), documentStatus)} />}
       {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => setLodgingEditingGuest(null)} onSaved={guest => notifySaved(guest, true)} />}
       {detailsGuest && <GuestDetails workspaceId={workspaceId} guest={detailsGuest} canDelete={canManageGuests} deleting={deletingGuestId === detailsGuest.id} onDelete={() => void deleteGuest(detailsGuest)} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
       {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} canInviteAdmins={canInviteAdmins} canInviteLodging={canInviteLodging} onClose={() => setPeopleOpen(false)} />}
@@ -490,13 +490,19 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
   onEdit: (guest: GuestGroup) => void
 }) {
   const [roomFilter, setRoomFilter] = useState<'all' | 'allocated' | 'unallocated'>('all')
+  const [search, setSearch] = useState('')
   const [exportError, setExportError] = useState('')
   const guestTotal = guests.reduce((count, guest) => count + guest.guest_count, 0)
   const roomTotal = guests.reduce((count, guest) => count + (guest.room_count ?? 0), 0)
   const hasAssignedRooms = (guest: GuestGroup) => (guest.assigned_room_numbers ?? []).some(room => room.trim().length > 0)
   const allocatedGuests = guests.filter(hasAssignedRooms).length
   const unallocatedGuests = guests.length - allocatedGuests
-  const visibleGuests = guests.filter(guest => roomFilter === 'all' || (roomFilter === 'allocated' ? hasAssignedRooms(guest) : !hasAssignedRooms(guest)))
+  const searchTerm = search.trim().toLocaleLowerCase()
+  const visibleGuests = guests.filter(guest => {
+    const matchesRoomFilter = roomFilter === 'all' || (roomFilter === 'allocated' ? hasAssignedRooms(guest) : !hasAssignedRooms(guest))
+    const matchesSearch = !searchTerm || guest.family_name.toLocaleLowerCase().includes(searchTerm) || guest.assigned_room_numbers.some(room => room.toLocaleLowerCase().includes(searchTerm))
+    return matchesRoomFilter && matchesSearch
+  })
 
   async function exportLodging(format: 'excel' | 'pdf') {
     const headers = ['Guest name', 'Number of guests', 'Total rooms', 'Allotted room numbers']
@@ -514,13 +520,14 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
 
   return <>
     <div className="lodging-heading"><div><span className="guest-eyebrow">ROOM OVERVIEW</span><h1>Lodging</h1><p>Guests, room totals, and allotted room numbers.</p></div><div className="lodging-summary"><strong>{guestTotal}</strong><span>guests</span><i /><strong>{roomTotal}</strong><span>total rooms</span></div></div>
+    {!loading && !loadError && guests.length > 0 && <label className="lodging-search"><Search size={17} /><span className="sr-only">Search guests or room numbers</span><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search guests or room numbers" /><button type="button" onClick={() => setSearch('')} aria-label="Clear lodging search" title="Clear search" disabled={!search}><X size={15} /></button></label>}
     {!loading && !loadError && guests.length > 0 && <div className="lodging-view-row"><div className="lodging-filters" role="group" aria-label="Filter by room allocation"><button className={`filter-chip ${roomFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'all'} onClick={() => setRoomFilter('all')}>All <span className="filter-count">{guests.length}</span></button><button className={`filter-chip ${roomFilter === 'allocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'allocated'} onClick={() => setRoomFilter('allocated')}>Allocated <span className="filter-count">{allocatedGuests}</span></button><button className={`filter-chip ${roomFilter === 'unallocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'unallocated'} onClick={() => setRoomFilter('unallocated')}>Unallocated <span className="filter-count">{unallocatedGuests}</span></button></div><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportLodging('excel')} onPdf={() => void exportLodging('pdf')} disabled={visibleGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Lodging view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => onViewModeChange('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => onViewModeChange('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
     {exportError && <p className="export-error" role="alert">{exportError}</p>}
     <div className={`lodging-data-scroll ${viewMode === 'cards' ? 'lodging-cards-mode' : ''}`}>
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading lodging…</div>
         : loadError ? <div className="guest-state error-state"><h2>Couldn’t load lodging</h2><p>Check your connection or workspace access, then try again.</p><button className="secondary-button" onClick={onRetry}>Try again</button></div>
           : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No guests yet</h2><p>Add guests in Guests, then record their stay and room details here.</p></div>
-            : visibleGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests in this filter</h2><p>There are no guests with {roomFilter === 'allocated' ? 'allocated' : 'unallocated'} rooms.</p><button className="text-button" onClick={() => setRoomFilter('all')}>Show all guests</button></div>
+            : visibleGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try another name, room number, or allocation filter.</p><button className="text-button" onClick={() => { setSearch(''); setRoomFilter('all') }}>Clear search and filters</button></div>
             : viewMode === 'spreadsheet' ? <><div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Guest</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th>{canEdit && <th className="lodging-action-heading"><span className="sr-only">Edit</span></th>}</tr></thead><tbody>{visibleGuests.map(guest => <tr key={guest.id}><th scope="row"><strong>{guest.family_name}</strong></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td>{canEdit && <td className="lodging-action"><button className="sheet-edit-button" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={16} /></button></td>}</tr>)}</tbody></table></div><p className="spreadsheet-hint lodging-spreadsheet-hint">Scroll sideways to see more columns.</p></>
               : <section className="lodging-card-list" aria-label="Lodging cards">{visibleGuests.map(guest => <article className="lodging-card" key={guest.id}><div className="lodging-card-heading"><div><h2>{guest.family_name}</h2><span>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span></div>{canEdit && <button className="lodging-card-edit" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={17} /></button>}</div><dl className="lodging-card-details"><div><dt>Total rooms</dt><dd>{guest.room_count ?? 'Not set'}</dd></div><div><dt>Allotted room numbers</dt><dd>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || 'Not allotted'}</dd></div></dl></article>)}</section>}
     </div>
@@ -741,7 +748,7 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
   workspaceId: string
   guest: GuestGroup | null
   onClose: () => void
-  onSaved: (guest: GuestGroup) => void
+  onSaved: (guest: GuestGroup, documentStatus?: string) => void
 }) {
   const [guestName, setGuestName] = useState(guest?.family_name ?? '')
   const [contactName, setContactName] = useState(guest?.contact_name ?? '')
@@ -756,8 +763,14 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
   const [roomCount, setRoomCount] = useState(guest?.room_count == null ? '' : String(guest.room_count))
   const [assignedRooms, setAssignedRooms] = useState<string[]>(guest?.assigned_room_numbers ?? [])
   const [notes, setNotes] = useState(guest?.notes ?? '')
+  const [documentFiles, setDocumentFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  function selectDocuments(event: ChangeEvent<HTMLInputElement>) {
+    setDocumentFiles(Array.from(event.target.files ?? []))
+    event.target.value = ''
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -795,7 +808,17 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
       setSaving(false)
       return
     }
-    onSaved(result.data as GuestGroup)
+    const savedGuest = result.data as GuestGroup
+    let documentStatus = ''
+    if (!guest && documentFiles.length > 0) {
+      const { uploadedCount, error: uploadError } = await uploadGuestDocuments(workspaceId, savedGuest.id, documentFiles)
+      if (uploadError) {
+        documentStatus = uploadedCount
+          ? `${savedGuest.family_name} added; ${uploadedCount} ${uploadedCount === 1 ? 'document was' : 'documents were'} uploaded. ${uploadError}`
+          : `${savedGuest.family_name} added, but the documents could not be uploaded: ${uploadError}`
+      }
+    }
+    onSaved(savedGuest, documentStatus)
   }
 
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog editor-dialog" role="dialog" aria-modal="true" aria-labelledby="guest-editor-title"><header className="dialog-header"><div><span className="guest-eyebrow">GUEST DETAILS</span><h2 id="guest-editor-title">{guest ? 'Edit guest' : 'Add a guest'}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><form className="guest-form" onSubmit={save}>
@@ -803,6 +826,7 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
     <fieldset className="form-section"><legend>Invitation and reply</legend><label className="check-row"><input type="checkbox" checked={invitationSent} onChange={event => setInvitationSent(event.target.checked)} /><span><strong>Invitation sent</strong><small>Mark this when their invitation has been sent.</small></span></label><div className="call-status-control"><label className="check-row"><input type="checkbox" checked={callMade} onChange={event => setCallMade(event.target.checked)} /><span><strong>Call made</strong><small>{lastCalledAt ? `Last called ${formatDate(lastCalledAt)}.` : 'Mark this after calling.'}</small></span></label>{guest && callMade && <button type="button" className="record-call-button" onClick={() => setLastCalledAt(new Date().toISOString())}>Record another call</button>}</div><label className="form-field rsvp-select-field">RSVP status<select value={rsvpStatus} onChange={event => setRsvpStatus(event.target.value as RsvpStatus)}><option value="pending">No reply yet</option><option value="confirmed">Confirmed</option><option value="maybe">Not sure yet</option><option value="declined">Declined</option></select></label></fieldset>
     <fieldset className="form-section"><legend>Stay details <span className="optional-label">Optional</span></legend><div className="form-two-col"><label className="form-field">Check-in date and time<input type="datetime-local" value={checkIn} onChange={event => setCheckIn(event.target.value)} /></label><label className="form-field">Check-out date and time<input type="datetime-local" value={checkOut} onChange={event => setCheckOut(event.target.value)} /></label></div><label className="form-field short-field">Number of rooms<input type="number" inputMode="numeric" min="0" max="100" value={roomCount} onChange={event => setRoomCount(event.target.value)} placeholder="Leave blank if not sure" /></label><div className="assigned-rooms-editor"><div className="assigned-rooms-heading">Room numbers assigned <span className="optional-label">Optional</span></div>{assignedRooms.length === 0 && <p className="room-assignment-hint">Add room numbers once the hotel assigns them.</p>}{assignedRooms.map((room, index) => <div className="assigned-room-row" key={index}><label className="sr-only" htmlFor={`assigned-room-${index}`}>Room number {index + 1}</label><input id={`assigned-room-${index}`} value={room} maxLength={30} onChange={event => setAssignedRooms(current => current.map((value, roomIndex) => roomIndex === index ? event.target.value : value))} placeholder={`Room ${index + 1} number`} /><button type="button" className="remove-room-button" onClick={() => setAssignedRooms(current => current.filter((_, roomIndex) => roomIndex !== index))} aria-label={`Remove room ${room || index + 1}`}><X size={17} /></button></div>)}<button type="button" className="add-room-button" onClick={() => setAssignedRooms(current => [...current, ''])}><Plus size={15} /> Add a room number</button></div></fieldset>
     <label className="form-field notes-field">Note <span className="optional-label">Optional</span><textarea value={notes} onChange={event => setNotes(event.target.value)} rows={2} maxLength={1000} placeholder="Anything helpful to remember" /></label>
+    {!guest && <section className="guest-create-documents" aria-label="Documents"><div><strong>Documents</strong><small>Optional · PDFs or images, up to 20 MB each</small></div><label className="guest-document-upload"><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple onChange={selectDocuments} /><span><Upload size={15} />Choose files</span></label>{documentFiles.length > 0 && <p>{documentFiles.length === 1 ? documentFiles[0].name : `${documentFiles.length} files selected`}</p>}</section>}
     {error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{guest ? 'Save changes' : 'Save guest'}</button></div>
     </form></section></div>
 }
