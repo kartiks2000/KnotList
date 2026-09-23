@@ -425,16 +425,17 @@ function GiftTracker({ guests, workspaceName, loading, loadError, canEdit, savin
   const [exportError, setExportError] = useState('')
   const field: GiftField = module === 'welcome' ? 'welcome_gift_given' : 'final_gift_given'
   const title = module === 'welcome' ? 'Welcome gift' : 'Final gift'
-  const givenCount = guests.filter(guest => guest[field] === true).length
-  const notGivenCount = guests.length - givenCount
+  const eligibleGuests = guests.filter(guest => guest.rsvp_status !== 'declined')
+  const givenCount = eligibleGuests.filter(guest => guest[field] === true).length
+  const notGivenCount = eligibleGuests.length - givenCount
   const visibleGuests = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase()
-    return guests.filter(guest => {
+    return eligibleGuests.filter(guest => {
       const matchesSearch = !needle || guest.family_name.toLocaleLowerCase().includes(needle)
       const matchesFilter = giftFilter === 'all' || (giftFilter === 'given' ? guest[field] === true : guest[field] !== true)
       return matchesSearch && matchesFilter
     })
-  }, [guests, search, giftFilter, field])
+  }, [eligibleGuests, search, giftFilter, field])
 
   async function exportGift(format: 'excel' | 'pdf') {
     const headers = ['Guest name', `${title} given`]
@@ -457,10 +458,10 @@ function GiftTracker({ guests, workspaceName, loading, loadError, canEdit, savin
       <button role="tab" aria-selected={module === 'final'} className={module === 'final' ? 'gift-module-selected' : ''} onClick={() => { setModule('final'); setGiftFilter('all') }}><Gift size={16} />Final gift</button>
     </nav>
     <section className="gift-module-panel" role="tabpanel">
-      <div className="gift-module-summary"><div><h2>{title}</h2><p>Tick the box when this guest has received it.</p></div><span>{givenCount} of {guests.length} given</span></div>
+      <div className="gift-module-summary"><div><h2>{title}</h2><p>Tick the box when this guest has received it.</p></div><span>{givenCount} of {eligibleGuests.length} given</span></div>
       <label className="guest-search gift-search"><Search size={17} /><input aria-label={`Search guests for ${title.toLowerCase()}`} placeholder="Search guests" value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}</label>
       <nav className="gift-filters" aria-label={`Filter ${title.toLowerCase()} status`}>
-        <button className={`filter-chip ${giftFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'all'} onClick={() => setGiftFilter('all')}>All <span className="filter-count">{guests.length}</span></button>
+        <button className={`filter-chip ${giftFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'all'} onClick={() => setGiftFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button>
         <button className={`filter-chip ${giftFilter === 'given' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'given'} onClick={() => setGiftFilter('given')}>Given <span className="filter-count">{givenCount}</span></button>
         <button className={`filter-chip ${giftFilter === 'not_given' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'not_given'} onClick={() => setGiftFilter('not_given')}>Not given <span className="filter-count">{notGivenCount}</span></button>
       </nav>
@@ -469,7 +470,7 @@ function GiftTracker({ guests, workspaceName, loading, loadError, canEdit, savin
       <div className="gift-table-scroll">
         {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} />Loading gifts…</div>
           : loadError ? <div className="guest-state error-state"><h2>Couldn’t load gift tracking</h2><p>Check your connection or workspace access, then try again.</p><button className="secondary-button" onClick={onRetry}>Try again</button></div>
-            : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Gift size={23} /></div><h2>No guests yet</h2><p>Add guests in Guests, then track their gifts here.</p></div>
+            : eligibleGuests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Gift size={23} /></div><h2>No guests to track</h2><p>Guests with a declined RSVP are excluded from gift tracking.</p></div>
               : visibleGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try another name or gift status.</p><button className="text-button" onClick={() => { setSearch(''); setGiftFilter('all') }}>Clear search and filters</button></div>
                 : <table className="gift-table"><thead><tr><th scope="col">Guest</th><th scope="col">{title} given</th></tr></thead><tbody>{visibleGuests.map(guest => {
                 const key = `${guest.id}:${field}`
@@ -496,13 +497,14 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
   const [roomFilter, setRoomFilter] = useState<'all' | 'allocated' | 'unallocated'>('all')
   const [search, setSearch] = useState('')
   const [exportError, setExportError] = useState('')
-  const guestTotal = guests.reduce((count, guest) => count + guest.guest_count, 0)
-  const roomTotal = guests.reduce((count, guest) => count + (guest.room_count ?? 0), 0)
+  const eligibleGuests = guests.filter(guest => guest.rsvp_status !== 'declined')
+  const guestTotal = eligibleGuests.reduce((count, guest) => count + guest.guest_count, 0)
+  const roomTotal = eligibleGuests.reduce((count, guest) => count + (guest.room_count ?? 0), 0)
   const hasAssignedRooms = (guest: GuestGroup) => (guest.assigned_room_numbers ?? []).some(room => room.trim().length > 0)
-  const allocatedGuests = guests.filter(hasAssignedRooms).length
-  const unallocatedGuests = guests.length - allocatedGuests
+  const allocatedGuests = eligibleGuests.filter(hasAssignedRooms).length
+  const unallocatedGuests = eligibleGuests.length - allocatedGuests
   const searchTerm = search.trim().toLocaleLowerCase()
-  const visibleGuests = guests.filter(guest => {
+  const visibleGuests = eligibleGuests.filter(guest => {
     const matchesRoomFilter = roomFilter === 'all' || (roomFilter === 'allocated' ? hasAssignedRooms(guest) : !hasAssignedRooms(guest))
     const matchesSearch = !searchTerm || guest.family_name.toLocaleLowerCase().includes(searchTerm) || guest.assigned_room_numbers.some(room => room.toLocaleLowerCase().includes(searchTerm))
     return matchesRoomFilter && matchesSearch
@@ -524,18 +526,18 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
 
   return <>
     <div className="lodging-heading"><div><span className="guest-eyebrow">ROOM OVERVIEW</span><h1>Lodging</h1><p>Guests, room totals, and allotted room numbers.</p></div><div className="lodging-summary"><strong>{guestTotal}</strong><span>guests</span><i /><strong>{roomTotal}</strong><span>total rooms</span></div></div>
-    {!loading && !loadError && guests.length > 0 && <label className="lodging-search"><Search size={17} /><span className="sr-only">Search guests or room numbers</span><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search guests or room numbers" /><button type="button" onClick={() => setSearch('')} aria-label="Clear lodging search" title="Clear search" disabled={!search}><X size={15} /></button></label>}
-    {!loading && !loadError && guests.length > 0 && <div className="lodging-view-row"><div className="lodging-filters" role="group" aria-label="Filter by room allocation"><button className={`filter-chip ${roomFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'all'} onClick={() => setRoomFilter('all')}>All <span className="filter-count">{guests.length}</span></button><button className={`filter-chip ${roomFilter === 'allocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'allocated'} onClick={() => setRoomFilter('allocated')}>Allocated <span className="filter-count">{allocatedGuests}</span></button><button className={`filter-chip ${roomFilter === 'unallocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'unallocated'} onClick={() => setRoomFilter('unallocated')}>Unallocated <span className="filter-count">{unallocatedGuests}</span></button></div><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportLodging('excel')} onPdf={() => void exportLodging('pdf')} disabled={visibleGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Lodging view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => onViewModeChange('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => onViewModeChange('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
+    {!loading && !loadError && eligibleGuests.length > 0 && <label className="lodging-search"><Search size={17} /><span className="sr-only">Search guests or room numbers</span><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search guests or room numbers" /><button type="button" onClick={() => setSearch('')} aria-label="Clear lodging search" title="Clear search" disabled={!search}><X size={15} /></button></label>}
+    {!loading && !loadError && eligibleGuests.length > 0 && <div className="lodging-view-row"><div className="lodging-filters" role="group" aria-label="Filter by room allocation"><button className={`filter-chip ${roomFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'all'} onClick={() => setRoomFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button><button className={`filter-chip ${roomFilter === 'allocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'allocated'} onClick={() => setRoomFilter('allocated')}>Allocated <span className="filter-count">{allocatedGuests}</span></button><button className={`filter-chip ${roomFilter === 'unallocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'unallocated'} onClick={() => setRoomFilter('unallocated')}>Unallocated <span className="filter-count">{unallocatedGuests}</span></button></div><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportLodging('excel')} onPdf={() => void exportLodging('pdf')} disabled={visibleGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Lodging view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => onViewModeChange('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => onViewModeChange('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
     {exportError && <p className="export-error" role="alert">{exportError}</p>}
     <div className={`lodging-data-scroll ${viewMode === 'cards' ? 'lodging-cards-mode' : ''}`}>
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading lodging…</div>
         : loadError ? <div className="guest-state error-state"><h2>Couldn’t load lodging</h2><p>Check your connection or workspace access, then try again.</p><button className="secondary-button" onClick={onRetry}>Try again</button></div>
-          : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No guests yet</h2><p>Add guests in Guests, then record their stay and room details here.</p></div>
+          : eligibleGuests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No guests for lodging</h2><p>Guests with a declined RSVP are excluded from lodging.</p></div>
             : visibleGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try another name, room number, or allocation filter.</p><button className="text-button" onClick={() => { setSearch(''); setRoomFilter('all') }}>Clear search and filters</button></div>
             : viewMode === 'spreadsheet' ? <><div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Guest</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th><th className="lodging-action-heading"><span className="sr-only">Guest actions</span></th></tr></thead><tbody>{visibleGuests.map(guest => <tr key={guest.id}><th scope="row"><button type="button" className="lodging-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td><td className="lodging-action"><span className="lodging-row-actions"><button className="sheet-edit-button" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={16} /></button>{canEdit && <button className="sheet-edit-button" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={16} /></button>}</span></td></tr>)}</tbody></table></div><p className="spreadsheet-hint lodging-spreadsheet-hint">Scroll sideways to see more columns.</p></>
               : <section className="lodging-card-list" aria-label="Lodging cards">{visibleGuests.map(guest => <article className="lodging-card" key={guest.id}><div className="lodging-card-heading"><div><button type="button" className="lodging-guest-name lodging-card-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button><span>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span></div><div className="lodging-card-actions"><button className="lodging-card-edit" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={17} /></button>{canEdit && <button className="lodging-card-edit" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={17} /></button>}</div></div><dl className="lodging-card-details"><div><dt>Total rooms</dt><dd>{guest.room_count ?? 'Not set'}</dd></div><div><dt>Allotted room numbers</dt><dd>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || 'Not allotted'}</dd></div></dl></article>)}</section>}
     </div>
-    {!loading && !loadError && guests.length > 0 && <footer className="guest-footer lodging-footer">Your lodging details are shared with people who have access to this planning space.</footer>}
+    {!loading && !loadError && eligibleGuests.length > 0 && <footer className="guest-footer lodging-footer">Your lodging details are shared with people who have access to this planning space.</footer>}
   </>
 }
 
