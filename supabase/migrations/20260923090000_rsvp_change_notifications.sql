@@ -9,7 +9,8 @@ alter table public.lodging_notification_events
   add constraint lodging_notification_events_event_type_check
     check (event_type in ('checked_in', 'checked_out', 'rsvp_confirmed', 'rsvp_maybe', 'rsvp_declined'));
 
-drop policy "Users can read their lodging notifications" on public.workspace_notifications;
+drop policy if exists "Users can read their lodging notifications" on public.workspace_notifications;
+drop policy if exists "Users can read their workspace notifications" on public.workspace_notifications;
 create policy "Users can read their workspace notifications"
   on public.workspace_notifications for select to authenticated
   using (
@@ -20,7 +21,8 @@ create policy "Users can read their workspace notifications"
     )
   );
 
-drop policy "Users can mark their lodging notifications read" on public.workspace_notifications;
+drop policy if exists "Users can mark their lodging notifications read" on public.workspace_notifications;
+drop policy if exists "Users can mark their workspace notifications read" on public.workspace_notifications;
 create policy "Users can mark their workspace notifications read"
   on public.workspace_notifications for update to authenticated
   using (
@@ -61,7 +63,7 @@ revoke all on function public.get_workspace_rsvp_notification_recipient_ids(uuid
 grant execute on function public.get_workspace_rsvp_notification_recipient_ids(uuid) to service_role;
 
 alter table public.guest_groups
-  add column last_rsvp_notification_event_id uuid references public.lodging_notification_events (id) on delete set null;
+  add column if not exists last_rsvp_notification_event_id uuid references public.lodging_notification_events (id) on delete set null;
 
 create or replace function public.notify_workspace_rsvp_change()
 returns trigger
@@ -107,6 +109,7 @@ begin
 end;
 $$;
 
+drop trigger if exists guest_groups_notify_rsvp_change on public.guest_groups;
 create trigger guest_groups_notify_rsvp_change
   before update of rsvp_status on public.guest_groups
   for each row execute function public.notify_workspace_rsvp_change();
