@@ -1,0 +1,18 @@
+{
+  "name": "KnotList",
+  "short_name": "KnotList",
+  "description": "A calm, simple space to plan together.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f2",
+  "theme_color": "#f7f6f2",
+  "icons": [
+    {
+      "src": "/heart-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

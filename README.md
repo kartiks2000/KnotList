@@ -66,3 +66,20 @@ Only the super admin can currently create role definitions, grant platform roles
 4. Add future product tables with workspace foreign keys, indexes, RLS read/write policies, and permission checks from day one.
 
 The app includes sign-in, sign-up, session display, sign-out, workspace creation for super admins, admin invitations, workspace people listing, and guest-family list and edit flows. Workspace role changes and member removal are not yet available.
+
+## Lodging browser notifications
+
+The notification inbox stores lodging check-in/check-out updates for other admins and lodging managers, and RSVP changes for other admins and super-admins. RSVP notifications never go to lodging managers. The bell updates live while KnotList is open. Browser push can also reach opted-in browsers while KnotList is closed; lock-screen push messages use generic wording.
+
+1. Apply the pending migrations, including [`20260923070000_lodging_browser_notifications.sql`](supabase/migrations/20260923070000_lodging_browser_notifications.sql), [`20260923080000_fix_lodging_notification_event_id.sql`](supabase/migrations/20260923080000_fix_lodging_notification_event_id.sql), and [`20260923090000_rsvp_change_notifications.sql`](supabase/migrations/20260923090000_rsvp_change_notifications.sql), after the lodging check-in migration.
+2. Generate VAPID keys with `npx web-push generate-vapid-keys`. Put the public key in `VITE_VAPID_PUBLIC_KEY` in `.env.local` and your web host's environment, then rebuild/redeploy the web app. This public key is safe to expose to the browser.
+3. Add the private key and sender identity as Supabase secrets; never put the private key in a `VITE_*` variable:
+
+   ```sh
+   supabase secrets set VAPID_PUBLIC_KEY="<public-key>" VAPID_PRIVATE_KEY="<private-key>" VAPID_SUBJECT="mailto:you@example.com" APP_URL="https://your-public-domain.example"
+   supabase functions deploy send-lodging-push
+   ```
+
+4. After deployment, each admin or lodging manager can open the bell and enable browser notifications on that device. On iPhone or iPad, first add KnotList to the Home Screen, open it from that icon, and enable notifications there. Browser permission must be granted by the user.
+
+For local Edge Function development, put the three VAPID values and `APP_URL` in `supabase/functions/.env` and run `supabase functions serve --env-file supabase/functions/.env`. Do not commit that file.
