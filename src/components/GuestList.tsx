@@ -458,7 +458,7 @@ function GiftTracker({ guests, workspaceName, loading, loadError, canEdit, savin
       <button role="tab" aria-selected={module === 'final'} className={module === 'final' ? 'gift-module-selected' : ''} onClick={() => { setModule('final'); setGiftFilter('all') }}><Gift size={16} />Final gift</button>
     </nav>
     <section className="gift-module-panel" role="tabpanel">
-      <div className="gift-module-summary"><div><h2>{title}</h2><p>Tick the box when this guest has received it.</p></div><span>{givenCount} of {eligibleGuests.length} given</span></div>
+      <div className="gift-module-summary"><div><h2>{title}</h2><p>Tick when received. Guests with declined RSVPs aren’t listed.</p></div><span>{givenCount} of {eligibleGuests.length} given</span></div>
       <label className="guest-search gift-search"><Search size={17} /><input aria-label={`Search guests for ${title.toLowerCase()}`} placeholder="Search guests" value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}</label>
       <nav className="gift-filters" aria-label={`Filter ${title.toLowerCase()} status`}>
         <button className={`filter-chip ${giftFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'all'} onClick={() => setGiftFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button>
