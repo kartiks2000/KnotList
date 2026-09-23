@@ -9,6 +9,8 @@ type Workspace = { id: string; name: string }
 
 type AuthMode = 'sign-in' | 'sign-up'
 
+const ACTIVE_WORKSPACE_KEY = 'knotlist.activeWorkspaceId'
+
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loadingSession, setLoadingSession] = useState(true)
@@ -142,7 +144,7 @@ function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [assignedRoles, setAssignedRoles] = useState<string[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState('')
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => window.localStorage.getItem(ACTIVE_WORKSPACE_KEY) ?? '')
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [newWorkspaceName, setNewWorkspaceName] = useState('')
@@ -196,7 +198,12 @@ function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut
       }
       const available = (workspaceResult.data ?? []) as Workspace[]
       setWorkspaces(available)
-      setActiveWorkspaceId(current => available.some(item => item.id === current) ? current : '')
+      setActiveWorkspaceId(current => {
+        const selected = available.some(item => item.id === current) ? current : ''
+        if (selected) window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, selected)
+        else window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY)
+        return selected
+      })
       setLoading(false)
     }
     void loadAccess()
@@ -217,17 +224,23 @@ function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut
     const workspace = data as Workspace
     setWorkspaces(current => [...current, workspace])
     setActiveWorkspaceId(workspace.id)
+    window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, workspace.id)
     setNewWorkspaceName('')
+  }
+
+  function backToSpaces() {
+    window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY)
+    setActiveWorkspaceId('')
   }
 
   if (loading) return <main className="auth-page"><div className="loading-state"><LoaderCircle className="spin" size={24} /><span>Loading your planning space…</span></div></main>
 
   if (workspaces.length > 0 && activeWorkspaceId) {
     const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId)!
-    return <GuestList workspaceId={activeWorkspace.id} workspaces={workspaces} onWorkspaceChange={setActiveWorkspaceId} onBackToSpaces={() => setActiveWorkspaceId('')} accountEmail={session.user.email ?? ''} onSignOut={onSignOut} />
+    return <GuestList workspaceId={activeWorkspace.id} workspaces={workspaces} onWorkspaceChange={id => { setActiveWorkspaceId(id); window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, id) }} onBackToSpaces={backToSpaces} accountEmail={session.user.email ?? ''} onSignOut={onSignOut} />
   }
 
-  if (workspaces.length > 0) return <WorkspaceChooser workspaces={workspaces} accountEmail={session.user.email ?? ''} onSelect={setActiveWorkspaceId} onSignOut={onSignOut} isSuperAdmin={isSuperAdmin} newWorkspaceName={newWorkspaceName} onWorkspaceNameChange={setNewWorkspaceName} onCreateWorkspace={createWorkspace} creatingWorkspace={creatingWorkspace} error={error} />
+  if (workspaces.length > 0) return <WorkspaceChooser workspaces={workspaces} accountEmail={session.user.email ?? ''} onSelect={id => { setActiveWorkspaceId(id); window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, id) }} onSignOut={onSignOut} isSuperAdmin={isSuperAdmin} newWorkspaceName={newWorkspaceName} onWorkspaceNameChange={setNewWorkspaceName} onCreateWorkspace={createWorkspace} creatingWorkspace={creatingWorkspace} error={error} />
 
   if (isSuperAdmin) return <main className="auth-page"><div className="auth-card workspace-setup-card"><Brand /><div className="success-mark"><Users size={24} /></div><span className="auth-eyebrow">SUPER ADMIN</span><h1>Create your planning space.</h1><p className="auth-description">A planning space keeps a wedding’s guest list private and organized.</p><div className="signed-email"><span className="email-avatar"><UserRound size={17} /></span><span>{session.user.email}</span><span className="verified-dot" /></div><form className="workspace-create-form" onSubmit={createWorkspace}><label className="field-label">Planning space name<div className="input-wrap"><input autoFocus value={newWorkspaceName} onChange={event => setNewWorkspaceName(event.target.value)} placeholder="e.g. Asha & Rahul’s wedding" maxLength={120} required /></div></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button auth-submit" disabled={creatingWorkspace}>{creatingWorkspace ? <LoaderCircle className="spin" size={17} /> : <PlusIcon />}Create planning space</button></form><button className="secondary-button signout-button" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div></main>
 
