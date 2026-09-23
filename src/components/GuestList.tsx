@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, FileText, Gift, Heart, ListChecks, LoaderCircle, Mail, Phone, Plus, Search, Table2, Trash2, Upload, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, FileText, Gift, Heart, ListChecks, LoaderCircle, Mail, MessageCircle, Phone, Plus, Search, Table2, Trash2, Upload, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { TasksView } from './TasksView'
 import { GuestDocuments, uploadGuestDocuments } from './GuestDocuments'
+import { WhatsAppInvites } from './WhatsAppInvites'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
 type Filter = 'all' | 'invite' | 'rsvp' | 'confirmed'
 type ViewMode = 'cards' | 'spreadsheet'
-type WorkspaceSection = 'guests' | 'lodging' | 'gifts' | 'tasks'
+type WorkspaceSection = 'guests' | 'lodging' | 'gifts' | 'tasks' | 'whatsapp'
 type GiftField = 'welcome_gift_given' | 'final_gift_given'
 
 export type GuestGroup = {
@@ -288,6 +289,24 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     }
   }
 
+  async function markInvitationSentFromShare(guestId: string, sentAt: string) {
+    if (!supabase || !canManageGuests) return false
+    const guest = guests.find(item => item.id === guestId)
+    if (!guest) return false
+    setGuests(current => current.map(item => item.id === guestId ? { ...item, invitation_sent: true, invitation_sent_at: sentAt } : item))
+    const { data, error } = await supabase.from('guest_groups')
+      .update({ invitation_sent: true, invitation_sent_at: sentAt })
+      .eq('workspace_id', workspaceId)
+      .eq('id', guestId)
+      .select('id')
+      .maybeSingle()
+    if (error || !data) {
+      setGuests(current => current.map(item => item.id === guestId ? { ...item, invitation_sent: guest.invitation_sent, invitation_sent_at: guest.invitation_sent_at } : item))
+      return false
+    }
+    return true
+  }
+
   async function deleteGuest(guest: GuestGroup) {
     if (!supabase || !canManageGuests || deletingGuestId) return
     if (!window.confirm(`Delete ${guest.family_name}? This will permanently remove this guest and their details from the planning space.`)) return
@@ -365,10 +384,11 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
             {canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={17} /><span>Lodging</span></button>}
             {canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={17} /><span>Gifts</span></button>}
             {canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => setSection('tasks')}><ListChecks size={17} /><span>Tasks</span></button>}
+            {canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => setSection('whatsapp')}><MessageCircle size={17} /><span>Invite</span></button>}
           </nav>
         </aside>
 
-      <main className={`guest-main ${section === 'guests' && viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''}`}>
+      <main className={`guest-main ${section === 'guests' && viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''} ${section === 'whatsapp' ? 'whatsapp-main' : ''}`}>
         {section === 'guests' && canAccessGuests ? <>
         <div className="guest-heading-row"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h1>Guests</h1><p>Keep track of guests, replies, and stays.</p></div><button className="primary-button add-family-button" onClick={() => showEditor()}><Plus size={18} /> Add guest</button></div>
         <section className="guest-summary" aria-label="Guest list summary"><div><Users size={16} /><strong>{guests.length}</strong><span>{guests.length === 1 ? 'guest' : 'guests'}</span></div><span className="summary-divider" /><div><strong>{guestTotal}</strong><span>guests</span></div><span className="summary-divider" /><div><strong>{inviteTotal}</strong><span>to invite</span></div><span className="summary-divider" /><div><strong>{waitingTotal}</strong><span>awaiting RSVP</span></div><span className="summary-divider" /><div><strong>{assignedRoomTotal}</strong><span>rooms assigned</span></div></section>
@@ -383,9 +403,9 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
           {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading guests…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one guest</h2><p>Add a guest you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first guest</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} canDelete={canManageGuests} deletingGuestId={deletingGuestId} onDelete={guest => void deleteGuest(guest)} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Guests you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} canDelete={canManageGuests} deleting={deletingGuestId === guest.id} onDelete={() => void deleteGuest(guest)} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
           <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
         </div>
-        </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} onViewDocuments={setLodgingDocumentsGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : section === 'tasks' && canAccessTasks ? <TasksView workspaceId={workspaceId} canManage={canManageTasks} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
+        </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} onViewDocuments={setLodgingDocumentsGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : section === 'tasks' && canAccessTasks ? <TasksView workspaceId={workspaceId} canManage={canManageTasks} /> : section === 'whatsapp' && canManageGuests ? <WhatsAppInvites workspaceId={workspaceId} workspaceName={workspaceName} guests={guests} onMarkInvitationSent={markInvitationSentFromShare} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
       </main>
-      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => setSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
+      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => setSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}{canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => setSection('whatsapp')}><MessageCircle size={18} /><span>Invite</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
       </div>
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={(guest, documentStatus) => notifySaved(guest, Boolean(editingGuest), documentStatus)} />}
