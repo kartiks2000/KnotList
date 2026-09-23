@@ -6,6 +6,47 @@ import { supabase } from '../lib/supabase'
 const bucket = 'guest-documents'
 const maxFileBytes = 20 * 1024 * 1024
 const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
+const acceptedFileTypes = 'application/pdf,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif'
+
+export async function uploadGuestDocuments(workspaceId: string, guestId: string, files: File[]) {
+  if (!supabase || files.length === 0) return { uploadedCount: 0, error: '' }
+  const invalidFile = files.find(file => !allowedTypes.has(file.type) || file.size > maxFileBytes)
+  if (invalidFile) {
+    return {
+      uploadedCount: 0,
+      error: !allowedTypes.has(invalidFile.type)
+        ? `${invalidFile.name} is not a supported PDF or image file.`
+        : `${invalidFile.name} is larger than the 20 MB limit.`,
+    }
+  }
+
+  let uploadedCount = 0
+  for (const file of files) {
+    const safeName = file.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(-120) || 'document'
+    const path = `${workspaceId}/${guestId}/${crypto.randomUUID()}-${safeName}`
+    const { error: storageError } = await supabase.storage.from(bucket).upload(path, file, {
+      cacheControl: '3600',
+      contentType: file.type,
+      upsert: false,
+    })
+    if (storageError) return { uploadedCount, error: `Could not upload ${file.name}. Check the storage migration and try again.` }
+
+    const { error: metadataError } = await supabase.from('guest_documents').insert({
+      workspace_id: workspaceId,
+      guest_group_id: guestId,
+      storage_path: path,
+      file_name: file.name,
+      mime_type: file.type,
+      size_bytes: file.size,
+    })
+    if (metadataError) {
+      await supabase.storage.from(bucket).remove([path])
+      return { uploadedCount, error: `Could not save ${file.name} to this guest. Please try again.` }
+    }
+    uploadedCount += 1
+  }
+  return { uploadedCount, error: '' }
+}
 
 type GuestDocument = {
   id: string
@@ -59,46 +100,11 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
     const files = Array.from(event.target.files ?? [])
     event.target.value = ''
     if (!supabase || !canManage || files.length === 0) return
-    const invalidFile = files.find(file => !allowedTypes.has(file.type) || file.size > maxFileBytes)
-    if (invalidFile) {
-      setError(!allowedTypes.has(invalidFile.type)
-        ? `${invalidFile.name} is not a supported PDF or image file.`
-        : `${invalidFile.name} is larger than the 20 MB limit.`)
-      return
-    }
-
     setUploading(true)
     setError('')
     setMessage('')
-    let uploadedCount = 0
-    for (const file of files) {
-      const safeName = file.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(-120) || 'document'
-      const path = `${workspaceId}/${guestId}/${crypto.randomUUID()}-${safeName}`
-      const { error: storageError } = await supabase.storage.from(bucket).upload(path, file, {
-        cacheControl: '3600',
-        contentType: file.type,
-        upsert: false,
-      })
-      if (storageError) {
-        setError(`Could not upload ${file.name}. Check the storage migration and try again.`)
-        break
-      }
-
-      const { error: metadataError } = await supabase.from('guest_documents').insert({
-        workspace_id: workspaceId,
-        guest_group_id: guestId,
-        storage_path: path,
-        file_name: file.name,
-        mime_type: file.type,
-        size_bytes: file.size,
-      })
-      if (metadataError) {
-        await supabase.storage.from(bucket).remove([path])
-        setError(`Could not save ${file.name} to this guest. Please try again.`)
-        break
-      }
-      uploadedCount += 1
-    }
+    const { uploadedCount, error: uploadError } = await uploadGuestDocuments(workspaceId, guestId, files)
+    if (uploadError) setError(uploadError)
     if (uploadedCount) setMessage(`${uploadedCount} ${uploadedCount === 1 ? 'file' : 'files'} added.`)
     setUploading(false)
     await loadDocuments()
@@ -143,7 +149,7 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
   }
 
   return <section className="guest-documents" aria-labelledby="guest-documents-title">
-    <div className="guest-documents-heading"><div><h3 id="guest-documents-title">Documents</h3><p>PDFs and images for this guest.</p></div>{canManage && <label className={`guest-document-upload ${uploading ? 'uploading' : ''}`}><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple disabled={uploading} onChange={event => void uploadFiles(event)} /><span>{uploading ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />}{uploading ? 'Adding…' : 'Add files'}</span></label>}</div>
+    <div className="guest-documents-heading"><div><h3 id="guest-documents-title">Documents</h3><p>PDFs and images for this guest.</p></div>{canManage && <label className={`guest-document-upload ${uploading ? 'uploading' : ''}`}><input type="file" accept={acceptedFileTypes} multiple disabled={uploading} onChange={event => void uploadFiles(event)} /><span>{uploading ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />}{uploading ? 'Adding…' : 'Add files'}</span></label>}</div>
     {error && <p className="guest-documents-error" role="alert">{error}</p>}
     {message && <p className="guest-documents-message" role="status">{message}</p>}
     {loading ? <p className="guest-documents-empty"><LoaderCircle className="spin" size={15} /> Loading documents…</p>
