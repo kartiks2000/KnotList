@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, Gift, Heart, ListChecks, LoaderCircle, Mail, Phone, Plus, Search, Table2, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { TasksView } from './TasksView'
+import { GuestDocuments } from './GuestDocuments'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
 type Filter = 'all' | 'invite' | 'rsvp' | 'confirmed'
@@ -290,6 +291,16 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     if (!window.confirm(`Delete ${guest.family_name}? This will permanently remove this guest and their details from the planning space.`)) return
 
     setDeletingGuestId(guest.id)
+    const { data: documents } = await supabase.from('guest_documents').select('storage_path').eq('workspace_id', workspaceId).eq('guest_group_id', guest.id)
+    if (documents?.length) {
+      const { error: storageError } = await supabase.storage.from('guest-documents').remove(documents.map(document => document.storage_path))
+      if (storageError) {
+        setDeletingGuestId(null)
+        setToast('Could not remove this guest’s documents. Try again before deleting the guest.')
+        window.setTimeout(() => setToast(''), 3500)
+        return
+      }
+    }
     const { error } = await supabase.from('guest_groups').delete().eq('workspace_id', workspaceId).eq('id', guest.id)
     setDeletingGuestId(null)
     if (error) {
@@ -377,7 +388,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
       {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => setLodgingEditingGuest(null)} onSaved={guest => notifySaved(guest, true)} />}
-      {detailsGuest && <GuestDetails guest={detailsGuest} canDelete={canManageGuests} deleting={deletingGuestId === detailsGuest.id} onDelete={() => void deleteGuest(detailsGuest)} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
+      {detailsGuest && <GuestDetails workspaceId={workspaceId} guest={detailsGuest} canDelete={canManageGuests} deleting={deletingGuestId === detailsGuest.id} onDelete={() => void deleteGuest(detailsGuest)} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
       {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} canInviteAdmins={canInviteAdmins} canInviteLodging={canInviteLodging} onClose={() => setPeopleOpen(false)} />}
       {toast && <div className="toast-message" role="status"><Check size={17} /> {toast}</div>}
     </div>
@@ -796,8 +807,8 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
     </form></section></div>
 }
 
-function GuestDetails({ guest, canDelete, deleting, onDelete, onClose, onEdit }: { guest: GuestGroup; canDelete: boolean; deleting: boolean; onDelete: () => void; onClose: () => void; onEdit: () => void }) {
-  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="guest-detail-title"><header className="dialog-header"><div><span className="guest-eyebrow">GUEST DETAILS</span><h2 id="guest-detail-title">{guest.family_name}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="detail-body"><div className="detail-highlight"><Users size={18} /><strong>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</strong><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></div><dl className="detail-list"><DetailLine label="Main contact" value={guest.contact_name || 'Not added'} /><DetailLine label="Phone number" value={guest.phone || 'Not added'} /><DetailLine label="Invitation" value={guest.invitation_sent ? `Sent${guest.invitation_sent_at ? ` · ${formatDate(guest.invitation_sent_at)}` : ''}` : 'Not sent'} /><DetailLine label="Invitation call" value={guest.invitation_call_made ? `Made${guest.last_called_at ? ` · ${formatDate(guest.last_called_at)}` : ''}` : 'Not made'} /><DetailLine label="Check-in" value={formatDate(guest.check_in_at) || 'Not added'} /><DetailLine label="Check-out" value={formatDate(guest.check_out_at) || 'Not added'} /><DetailLine label="Number of rooms" value={guest.room_count === null ? 'Not added' : String(guest.room_count)} /><DetailLine label="Room numbers assigned" value={guest.assigned_room_numbers.join(', ') || 'Not assigned'} /><DetailLine label="Note" value={guest.notes || 'None'} /></dl></div><footer className="dialog-actions detail-actions"><button className="secondary-button" onClick={onClose}>Close</button><button className="primary-button" onClick={onEdit}><Edit3 size={16} /> Edit guest</button>{canDelete && <button className="danger-button danger-icon-button" onClick={onDelete} disabled={deleting} aria-label="Delete guest" title="Delete guest"><Trash2 size={15} /></button>}</footer></section></div>
+function GuestDetails({ workspaceId, guest, canDelete, deleting, onDelete, onClose, onEdit }: { workspaceId: string; guest: GuestGroup; canDelete: boolean; deleting: boolean; onDelete: () => void; onClose: () => void; onEdit: () => void }) {
+  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="guest-detail-title"><header className="dialog-header"><div><span className="guest-eyebrow">GUEST DETAILS</span><h2 id="guest-detail-title">{guest.family_name}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="detail-body"><div className="detail-highlight"><Users size={18} /><strong>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</strong><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></div><dl className="detail-list"><DetailLine label="Main contact" value={guest.contact_name || 'Not added'} /><DetailLine label="Phone number" value={guest.phone || 'Not added'} /><DetailLine label="Invitation" value={guest.invitation_sent ? `Sent${guest.invitation_sent_at ? ` · ${formatDate(guest.invitation_sent_at)}` : ''}` : 'Not sent'} /><DetailLine label="Invitation call" value={guest.invitation_call_made ? `Made${guest.last_called_at ? ` · ${formatDate(guest.last_called_at)}` : ''}` : 'Not made'} /><DetailLine label="Check-in" value={formatDate(guest.check_in_at) || 'Not added'} /><DetailLine label="Check-out" value={formatDate(guest.check_out_at) || 'Not added'} /><DetailLine label="Number of rooms" value={guest.room_count === null ? 'Not added' : String(guest.room_count)} /><DetailLine label="Room numbers assigned" value={guest.assigned_room_numbers.join(', ') || 'Not assigned'} /><DetailLine label="Note" value={guest.notes || 'None'} /></dl><GuestDocuments workspaceId={workspaceId} guestId={guest.id} canManage={canDelete} /></div><footer className="dialog-actions detail-actions"><button className="secondary-button" onClick={onClose}>Close</button><button className="primary-button" onClick={onEdit}><Edit3 size={16} /> Edit guest</button>{canDelete && <button className="danger-button danger-icon-button" onClick={onDelete} disabled={deleting} aria-label="Delete guest" title="Delete guest"><Trash2 size={15} /></button>}</footer></section></div>
 }
 
 function DetailLine({ label, value }: { label: string; value: string }) {
