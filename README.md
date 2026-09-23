@@ -11,6 +11,18 @@ A mobile-first React + TypeScript starter for a wedding planning app. The curren
 
 The frontend only uses the Supabase publishable/anon key. Never put a service role key in a `VITE_*` variable or in browser code.
 
+## Deploy the web app
+
+Build the production site with `npm run build`; the static files are written to `dist/`. Configure your hosting provider to run `npm run build` and publish `dist/`. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to the provider's production environment variables.
+
+After your site has a public URL, set it as the Supabase Auth site URL and add it to the allowed redirect URLs. Set the `APP_URL` Supabase secret to the same public origin so workspace invitation links return to the deployed app:
+
+```sh
+supabase secrets set APP_URL="https://your-public-domain.example"
+```
+
+Use only the Supabase publishable/anon key in the web app. Keep service-role keys and other secrets in trusted server-side environments.
+
 ## Set up Supabase auth, roles, and guest list
 
 1. Create a Supabase project and configure Auth email/password and email-confirmation settings to suit your launch.
