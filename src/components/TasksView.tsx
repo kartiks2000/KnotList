@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Check, Circle, ListChecks, LoaderCircle, MessageCircle, Plus, Send } from 'lucide-react'
+import { CalendarDays, Check, Circle, ListChecks, LoaderCircle, MessageCircle, Plus, Send, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 type TaskFilter = 'all' | 'incomplete' | 'completed'
@@ -122,6 +122,20 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     setTasks(current => current.map(item => item.id === task.id ? { ...item, is_completed: !task.is_completed } : item))
   }
 
+  async function deleteTask(task: WorkspaceTask) {
+    if (!supabase || !canManage || busyTaskId) return
+    if (!window.confirm(`Delete “${task.title}”? Its comments will also be deleted.`)) return
+    setBusyTaskId(task.id)
+    setError('')
+    const { error: deleteError } = await supabase.from('workspace_tasks').delete().eq('workspace_id', workspaceId).eq('id', task.id)
+    setBusyTaskId('')
+    if (deleteError) {
+      setError('Could not delete this task. Check your access and try again.')
+      return
+    }
+    setTasks(current => current.filter(item => item.id !== task.id))
+  }
+
   async function addComment(event: React.FormEvent<HTMLFormElement>, task: WorkspaceTask) {
     event.preventDefault()
     if (!supabase || !commentDrafts[task.id]?.trim() || busyTaskId) return
@@ -166,6 +180,7 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
             <div className="task-card-main">
               <button className="task-complete-button" aria-label={task.is_completed ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`} title={task.is_completed ? 'Mark incomplete' : 'Mark complete'} disabled={!canManage || busyTaskId === task.id} onClick={() => void toggleTask(task)}>{task.is_completed ? <Check size={15} /> : <Circle size={17} />}</button>
               <div className="task-info"><h2>{task.title}</h2><div className="task-meta"><span>{assigneeLabel(task.assigned_to)}</span>{task.deadline && <span><CalendarDays size={13} />Due {formatDeadline(task.deadline)}</span>}</div></div>
+              {canManage && <button className="task-delete-button" aria-label={`Delete ${task.title}`} title="Delete task" disabled={busyTaskId === task.id} onClick={() => void deleteTask(task)}>{busyTaskId === task.id ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}</button>}
             </div>
             <details className="task-comments">
               <summary><MessageCircle size={15} /><span>Comments</span><span className="task-comment-count">{task.workspace_task_comments.length}</span></summary>
