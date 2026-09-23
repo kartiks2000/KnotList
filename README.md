@@ -23,6 +23,30 @@ supabase secrets set APP_URL="https://your-public-domain.example"
 
 Use only the Supabase publishable/anon key in the web app. Keep service-role keys and other secrets in trusted server-side environments.
 
+## Build the iOS and Android apps with Capacitor
+
+Capacitor wraps the existing Vite app in native iOS and Android projects. The app uses the same Supabase backend and UI as the web app.
+
+1. Use Node.js 22 or newer (`nvm use` uses the version in `.nvmrc`).
+2. Install dependencies with `npm install`.
+3. Make sure `.env.local` contains the Supabase URL and anon/publishable key before building.
+4. Build and copy the web app into both native projects:
+
+   ```sh
+   npm run cap:sync
+   ```
+
+5. Open a native project in its IDE:
+
+   ```sh
+   npm run cap:open:ios
+   npm run cap:open:android
+   ```
+
+The iOS build requires macOS and Xcode 26 or newer. Android builds require Android Studio 2025.2.1 or newer and an Android SDK. After changing web code, run `npm run cap:sync` again before testing the native app. The `com.knotlist.app` application identifier is configured in `capacitor.config.ts`; change it before publishing if you use a different permanent store identifier.
+
+Email confirmation and invitation links currently use the web app URL. Add native deep-link/universal-link handling and configure the matching Supabase Auth redirect URLs before relying on those email flows in the installed app.
+
 ## Set up Supabase auth, roles, and guest list
 
 1. Create a Supabase project and configure Auth email/password and email-confirmation settings to suit your launch.

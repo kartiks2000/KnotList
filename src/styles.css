@@ -229,3 +229,29 @@
 .lodging-guest-name{max-width:100%;padding:0;border:0;background:transparent;color:#455347;font:600 11px 'DM Sans',sans-serif;text-align:left;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lodging-guest-name:hover,.lodging-guest-name:focus-visible{text-decoration-color:#718773}.lodging-card-guest-name{display:block;margin:0 0 4px;color:#455347;font:500 17px 'Playfair Display',serif}.guest-document-download{width:32px;height:32px;flex:0 0 32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e5e3dc;border-radius:6px;background:#fbfaf7;color:#607360;cursor:pointer}.guest-document-download:disabled{opacity:.55;cursor:wait}.lodging-documents-dialog{width:min(100%,620px)}
 .lodging-row-actions,.lodging-card-actions{display:inline-flex;align-items:center;justify-content:center;gap:5px}.lodging-card-actions{flex:0 0 auto}
 .lodging-table .lodging-action-heading,.lodging-table .lodging-action{width:76px;min-width:76px;max-width:76px;padding-left:4px!important;padding-right:4px!important}.lodging-table .lodging-action .sheet-edit-button{width:30px;min-width:30px;height:30px;min-height:30px;padding:0}
+
+/* iOS zooms focused form controls below 16px; extend the web content into safe areas deliberately. */
+@media(max-width:650px){
+  input,select,textarea{font-size:16px!important}
+  .guest-topbar{height:calc(52px + env(safe-area-inset-top,0px));flex-basis:calc(52px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px)}
+  .auth-page,.space-home{padding-top:env(safe-area-inset-top,0px)}
+  .mobile-workspace-nav{padding-bottom:max(4px,env(safe-area-inset-bottom,0px))}
+}
+@supports (-webkit-touch-callout:none){
+  @media(max-width:650px){
+    :root{--ios-top-inset:max(env(safe-area-inset-top,0px),60px)}
+    .space-home{padding-top:var(--ios-top-inset)}
+    .guest-topbar{height:calc(52px + var(--ios-top-inset));flex-basis:calc(52px + var(--ios-top-inset));padding-top:var(--ios-top-inset)}
+    .auth-page{padding-top:var(--ios-top-inset)}
+  }
+}
+@media(max-width:650px){
+  .space-home-content h1{max-width:100%;font-size:clamp(28px,7vw,36px);line-height:1.12;overflow-wrap:anywhere}
+  .space-home-header .brand{flex:0 0 auto}
+  .space-home-header .space-account{min-width:0;flex:0 0 auto}
+  .guest-topbar{min-width:0}
+  .guest-topbar .guest-brand{flex:0 0 auto}
+  .guest-topbar .workspace-picker-wrap{min-width:0;width:0;margin-left:0;flex:1 1 0}
+  .guest-topbar .workspace-picker{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .guest-topbar .account-area{min-width:0;flex:0 0 auto}
+}

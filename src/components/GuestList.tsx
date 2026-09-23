@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { Keyboard } from '@capacitor/keyboard'
+import { Directory, Filesystem } from '@capacitor/filesystem'
+import { Share } from '@capacitor/share'
 import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, FileText, Gift, Heart, ListChecks, LoaderCircle, Mail, Phone, Plus, Search, Table2, Trash2, Upload, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { TasksView } from './TasksView'
@@ -72,6 +76,21 @@ function formatDate(value: string | null) {
 
 type ExportTable = { title: string; headers: string[]; rows: (string | number)[][] }
 
+async function shareNativeExport(filename: string, base64: string) {
+  if (!Capacitor.isPluginAvailable('Filesystem') || !Capacitor.isPluginAvailable('Share')) {
+    throw new Error('Native file sharing is not available. Run npm run cap:sync, then rebuild the iOS app in Xcode.')
+  }
+  const { uri } = await Filesystem.writeFile({ path: filename, data: base64, directory: Directory.Cache })
+  await Share.share({ title: filename, files: [uri], dialogTitle: 'Save or share export' })
+}
+
+function describeExportError(error: unknown) {
+  console.error('KnotList export failed:', error)
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message
+  return 'An unexpected error occurred.'
+}
+
 function fileSlug(value: string) {
   return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'planning-space'
 }
@@ -85,7 +104,12 @@ async function saveExcelExport(filename: string, tables: ExportTable[]) {
     if (worksheet['!ref']) worksheet['!autofilter'] = { ref: worksheet['!ref'] }
     XLSX.utils.book_append_sheet(workbook, worksheet, table.title.slice(0, 31))
   }
-  XLSX.writeFile(workbook, filename, { compression: true })
+  if (Capacitor.isNativePlatform()) {
+    const base64 = XLSX.write(workbook, { bookType: 'xlsx', type: 'base64', compression: true })
+    await shareNativeExport(filename, base64)
+  } else {
+    XLSX.writeFile(workbook, filename, { compression: true })
+  }
 }
 
 async function savePdfExport(filename: string, reportTitle: string, tables: ExportTable[]) {
@@ -113,7 +137,12 @@ async function savePdfExport(filename: string, reportTitle: string, tables: Expo
       rowPageBreak: 'avoid',
     })
   })
-  pdf.save(filename)
+  if (Capacitor.isNativePlatform()) {
+    const base64 = pdf.output('datauristring').split(',')[1]
+    await shareNativeExport(filename, base64)
+  } else {
+    pdf.save(filename)
+  }
 }
 
 function ExportActions({ onExcel, onPdf, disabled = false }: { onExcel: () => void; onPdf: () => void; disabled?: boolean }) {
@@ -324,8 +353,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     try {
       if (format === 'excel') await saveExcelExport(`${name}.xlsx`, [table])
       else await savePdfExport(`${name}.pdf`, `${workspaceName} · Guests`, [table])
-    } catch {
-      setToast(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export. Please try again.`)
+    } catch (error) {
+      setToast(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export: ${describeExportError(error)}`)
       window.setTimeout(() => setToast(''), 3500)
     }
   }
@@ -446,8 +475,8 @@ function GiftTracker({ guests, workspaceName, loading, loadError, canEdit, savin
     try {
       if (format === 'excel') await saveExcelExport(`${name}.xlsx`, [table])
       else await savePdfExport(`${name}.pdf`, `${workspaceName} · ${title}`, [table])
-    } catch {
-      setExportError(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export. Please try again.`)
+    } catch (error) {
+      setExportError(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export: ${describeExportError(error)}`)
     }
   }
 
@@ -519,8 +548,8 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
     try {
       if (format === 'excel') await saveExcelExport(`${name}.xlsx`, [table])
       else await savePdfExport(`${name}.pdf`, `${workspaceName} · Lodging`, [table])
-    } catch {
-      setExportError(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export. Please try again.`)
+    } catch (error) {
+      setExportError(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export: ${describeExportError(error)}`)
     }
   }
 
@@ -756,6 +785,15 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
   onClose: () => void
   onSaved: (guest: GuestGroup, documentStatus?: string) => void
 }) {
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'ios') return
+
+    void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined)
+    return () => {
+      void Keyboard.setAccessoryBarVisible({ isVisible: true }).catch(() => undefined)
+    }
+  }, [])
+
   const [guestName, setGuestName] = useState(guest?.family_name ?? '')
   const [contactName, setContactName] = useState(guest?.contact_name ?? '')
   const [phone, setPhone] = useState(guest?.phone ?? '')
