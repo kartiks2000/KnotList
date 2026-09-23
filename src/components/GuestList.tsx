@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, Gift, Heart, LoaderCircle, Mail, Plus, Search, Table2, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, Gift, Heart, LoaderCircle, Mail, Plus, Search, Table2, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
@@ -147,6 +147,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const [canAccessGifts, setCanAccessGifts] = useState(false)
   const [canManageLodging, setCanManageLodging] = useState(false)
   const [canManageGifts, setCanManageGifts] = useState(false)
+  const [canManageGuests, setCanManageGuests] = useState(false)
+  const [deletingGuestId, setDeletingGuestId] = useState<string | null>(null)
   const [savingGiftFields, setSavingGiftFields] = useState<Set<string>>(() => new Set())
   const [peopleOpen, setPeopleOpen] = useState(false)
 
@@ -154,17 +156,20 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     if (!supabase) return
     setLoading(true)
     setLoadError('')
-    const [guestRead, lodgingRead, lodgingManage, giftsRead, giftsManage] = await Promise.all([
+    const [guestRead, guestManage, lodgingRead, lodgingManage, giftsRead, giftsManage] = await Promise.all([
       supabase.rpc('has_permission', { requested_permission: 'app_data.read', requested_workspace_id: workspaceId }),
+      supabase.rpc('has_permission', { requested_permission: 'app_data.manage', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'lodging.read', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'lodging.manage', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'gifts.read', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'gifts.manage', requested_workspace_id: workspaceId }),
     ])
     const canReadGuestData = !guestRead.error && guestRead.data === true
+    const canManageGuestData = !guestManage.error && guestManage.data === true
     const canReadLodgingData = !lodgingRead.error && lodgingRead.data === true
     const canManageLodgingData = !lodgingManage.error && lodgingManage.data === true
     setCanAccessGuests(canReadGuestData)
+    setCanManageGuests(canManageGuestData)
     setCanAccessLodging(canReadLodgingData)
     setCanAccessGifts(!giftsRead.error && giftsRead.data === true)
     setCanManageLodging(canManageLodgingData)
@@ -267,6 +272,24 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     }
   }
 
+  async function deleteGuest(guest: GuestGroup) {
+    if (!supabase || !canManageGuests || deletingGuestId) return
+    if (!window.confirm(`Delete ${guest.family_name}? This will permanently remove this guest and their details from the planning space.`)) return
+
+    setDeletingGuestId(guest.id)
+    const { error } = await supabase.from('guest_groups').delete().eq('workspace_id', workspaceId).eq('id', guest.id)
+    setDeletingGuestId(null)
+    if (error) {
+      setToast('Could not delete guest. Check your access and try again.')
+      window.setTimeout(() => setToast(''), 3500)
+      return
+    }
+    setGuests(current => current.filter(item => item.id !== guest.id))
+    setDetailsGuest(current => current?.id === guest.id ? null : current)
+    setToast(`${guest.family_name} deleted`)
+    window.setTimeout(() => setToast(''), 3500)
+  }
+
   async function exportGuests(format: 'excel' | 'pdf') {
     const headers = ['Guest name', 'Contact name', 'Phone', 'Guests', 'RSVP status', 'Invitation sent', 'Invitation sent at', 'Invitation call made', 'Last call at', 'Check-in', 'Check-out', 'Number of rooms', 'Allotted room numbers', 'Notes']
     const rows = filteredGuests.map(guest => [guest.family_name, guest.contact_name, guest.phone, guest.guest_count, rsvpLabel(guest), guest.invitation_sent ? 'Yes' : 'No', formatDate(guest.invitation_sent_at), guest.invitation_call_made ? 'Yes' : 'No', formatDate(guest.last_called_at), formatDate(guest.check_in_at), formatDate(guest.check_out_at), guest.room_count ?? '', guest.assigned_room_numbers.filter(room => room.trim()).join(', '), guest.notes])
@@ -330,7 +353,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
         {!loading && !loadError && guests.length > 0 && <div className="guest-view-row"><span>{filteredGuests.length} {filteredGuests.length === 1 ? 'guest' : 'guests'}</span><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportGuests('excel')} onPdf={() => void exportGuests('pdf')} disabled={filteredGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Guest list view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => setViewMode('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => setViewMode('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
 
         <div className="guest-data-scroll">
-          {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading guests…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one guest</h2><p>Add a guest you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first guest</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Guests you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
+          {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading guests…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one guest</h2><p>Add a guest you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first guest</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} canDelete={canManageGuests} deletingGuestId={deletingGuestId} onDelete={guest => void deleteGuest(guest)} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Guests you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} canDelete={canManageGuests} deleting={deletingGuestId === guest.id} onDelete={() => void deleteGuest(guest)} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
           <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
         </div>
         </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
@@ -340,7 +363,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
       {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => setLodgingEditingGuest(null)} onSaved={guest => notifySaved(guest, true)} />}
-      {detailsGuest && <GuestDetails guest={detailsGuest} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
+      {detailsGuest && <GuestDetails guest={detailsGuest} canDelete={canManageGuests} deleting={deletingGuestId === detailsGuest.id} onDelete={() => void deleteGuest(detailsGuest)} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
       {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} canInviteAdmins={canInviteAdmins} canInviteLodging={canInviteLodging} onClose={() => setPeopleOpen(false)} />}
       {toast && <div className="toast-message" role="status"><Check size={17} /> {toast}</div>}
     </div>
@@ -627,7 +650,7 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, ca
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span>{inviteRoles.length > 1 ? <select aria-label="Access level" value={roleKey} onChange={event => setRoleKey(event.target.value as InviteRoleKey)}>{inviteRoles.map(role => <option key={role.key} value={role.key}>{role.name}</option>)}</select> : <strong>{selectedRoleName}</strong>}</div><p className="people-help">{roleKey === 'lodging_manager' ? 'This gives access to guest counts, room totals, and allotted room numbers in this planning space. It does not include guest contacts, invitations, replies, or notes.' : 'This adds Admin access to this planning space only.'} New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting || inviteRoles.length === 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : `Invite ${selectedRoleName}`}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span></li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
 }
 
-function GuestCard({ guest, onOpen, onEdit }: { guest: GuestGroup; onOpen: () => void; onEdit: () => void }) {
+function GuestCard({ guest, canDelete, deleting, onDelete, onOpen, onEdit }: { guest: GuestGroup; canDelete: boolean; deleting: boolean; onDelete: () => void; onOpen: () => void; onEdit: () => void }) {
   const stay = guest.check_in_at && guest.check_out_at
     ? `${formatDate(guest.check_in_at)} – ${formatDate(guest.check_out_at)}`
     : guest.check_in_at ? `Arrives ${formatDate(guest.check_in_at)}` : ''
@@ -643,22 +666,25 @@ function GuestCard({ guest, onOpen, onEdit }: { guest: GuestGroup; onOpen: () =>
         <div className="guest-card-status"><span className={guest.invitation_sent ? 'state-done' : 'state-todo'}><Mail size={14} />Invite {guest.invitation_sent ? `sent${guest.invitation_sent_at ? ` · ${formatDate(guest.invitation_sent_at)}` : ''}` : 'not sent'}</span><span className={guest.invitation_call_made ? 'state-done' : 'state-todo'}><Check size={14} />Call {guest.invitation_call_made ? `made${guest.last_called_at ? ` · ${formatDate(guest.last_called_at)}` : ''}` : 'not made'}</span></div>
         {(stay || roomDetails) && <div className="guest-stay"><CalendarDays size={15} /><span>{stay || 'Stay dates not added'}</span>{roomDetails && <span className="room-count">{roomDetails}</span>}</div>}
       </button>
-      <button className="guest-card-edit" onClick={onEdit}><Edit3 size={15} /><span>Edit</span></button>
+      <div className="guest-card-actions"><button className="guest-card-edit" onClick={onEdit}><Edit3 size={15} /><span>Edit</span></button>{canDelete && <button className="guest-card-delete" onClick={onDelete} disabled={deleting} aria-label={`Delete ${guest.family_name}`} title="Delete guest"><Trash2 size={15} /></button>}</div>
     </article>
   )
 }
 
-function GuestSpreadsheet({ guests, onOpen, onEdit }: {
+function GuestSpreadsheet({ guests, canDelete, deletingGuestId, onDelete, onOpen, onEdit }: {
   guests: GuestGroup[]
+  canDelete: boolean
+  deletingGuestId: string | null
+  onDelete: (guest: GuestGroup) => void
   onOpen: (guest: GuestGroup) => void
   onEdit: (guest: GuestGroup) => void
 }) {
   return (
     <div className="spreadsheet-panel">
       <div className="spreadsheet-scroll" role="region" aria-label="Guest spreadsheet" tabIndex={0}>
-        <table className="guest-spreadsheet">
-          <thead><tr><th className="sticky-family">Guest</th><th>Guests</th><th>RSVP</th><th>Invitation sent</th><th>Last call</th><th>Check-in</th><th>Check-out</th><th>Number of rooms</th><th>Room numbers</th><th className="sheet-action-heading"><span className="sr-only">Edit</span></th></tr></thead>
-          <tbody>{guests.map(guest => <tr key={guest.id}><th scope="row" className="sticky-family"><button className="sheet-family-button" onClick={() => onOpen(guest)}>{guest.family_name}<small>{guest.contact_name || guest.phone || 'View details'}</small></button></th><td>{guest.guest_count}</td><td><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></td><td>{guest.invitation_sent ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.invitation_sent_at)}</span> : <span className="sheet-muted">Not sent</span>}</td><td>{guest.invitation_call_made ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.last_called_at)}</span> : <span className="sheet-muted">Not called</span>}</td><td>{formatDate(guest.check_in_at) || '—'}</td><td>{formatDate(guest.check_out_at) || '—'}</td><td>{guest.room_count ?? '—'}</td><td>{guest.assigned_room_numbers.join(', ') || '—'}</td><td className="sheet-action"><button className="sheet-edit-button" aria-label={`Edit ${guest.family_name}`} title="Edit guest" onClick={() => onEdit(guest)}><Edit3 size={16} /></button></td></tr>)}</tbody>
+        <table className={`guest-spreadsheet ${canDelete ? 'has-delete-actions' : ''}`}>
+          <thead><tr><th className="sticky-family">Guest</th><th>Guests</th><th>RSVP</th><th>Invitation sent</th><th>Last call</th><th>Check-in</th><th>Check-out</th><th>Number of rooms</th><th>Room numbers</th><th className="sheet-action-heading"><span className="sr-only">Actions</span></th></tr></thead>
+          <tbody>{guests.map(guest => <tr key={guest.id}><th scope="row" className="sticky-family"><button className="sheet-family-button" onClick={() => onOpen(guest)}>{guest.family_name}<small>{guest.contact_name || guest.phone || 'View details'}</small></button></th><td>{guest.guest_count}</td><td><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></td><td>{guest.invitation_sent ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.invitation_sent_at)}</span> : <span className="sheet-muted">Not sent</span>}</td><td>{guest.invitation_call_made ? <span className="sheet-complete"><Check size={14} />{formatDate(guest.last_called_at)}</span> : <span className="sheet-muted">Not called</span>}</td><td>{formatDate(guest.check_in_at) || '—'}</td><td>{formatDate(guest.check_out_at) || '—'}</td><td>{guest.room_count ?? '—'}</td><td>{guest.assigned_room_numbers.join(', ') || '—'}</td><td className="sheet-action"><span className="sheet-row-actions"><button className="sheet-edit-button" aria-label={`Edit ${guest.family_name}`} title="Edit guest" onClick={() => onEdit(guest)}><Edit3 size={16} /></button>{canDelete && <button className="sheet-delete-button" aria-label={`Delete ${guest.family_name}`} title="Delete guest" disabled={deletingGuestId === guest.id} onClick={() => onDelete(guest)}><Trash2 size={15} /></button>}</span></td></tr>)}</tbody>
         </table>
       </div>
       <p className="spreadsheet-hint">Scroll sideways to see more columns.</p>
@@ -736,8 +762,8 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
     </form></section></div>
 }
 
-function GuestDetails({ guest, onClose, onEdit }: { guest: GuestGroup; onClose: () => void; onEdit: () => void }) {
-  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="guest-detail-title"><header className="dialog-header"><div><span className="guest-eyebrow">GUEST DETAILS</span><h2 id="guest-detail-title">{guest.family_name}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="detail-body"><div className="detail-highlight"><Users size={18} /><strong>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</strong><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></div><dl className="detail-list"><DetailLine label="Main contact" value={guest.contact_name || 'Not added'} /><DetailLine label="Phone number" value={guest.phone || 'Not added'} /><DetailLine label="Invitation" value={guest.invitation_sent ? `Sent${guest.invitation_sent_at ? ` · ${formatDate(guest.invitation_sent_at)}` : ''}` : 'Not sent'} /><DetailLine label="Invitation call" value={guest.invitation_call_made ? `Made${guest.last_called_at ? ` · ${formatDate(guest.last_called_at)}` : ''}` : 'Not made'} /><DetailLine label="Check-in" value={formatDate(guest.check_in_at) || 'Not added'} /><DetailLine label="Check-out" value={formatDate(guest.check_out_at) || 'Not added'} /><DetailLine label="Number of rooms" value={guest.room_count === null ? 'Not added' : String(guest.room_count)} /><DetailLine label="Room numbers assigned" value={guest.assigned_room_numbers.join(', ') || 'Not assigned'} /><DetailLine label="Note" value={guest.notes || 'None'} /></dl></div><footer className="dialog-actions detail-actions"><button className="secondary-button" onClick={onClose}>Close</button><button className="primary-button" onClick={onEdit}><Edit3 size={16} /> Edit guest</button></footer></section></div>
+function GuestDetails({ guest, canDelete, deleting, onDelete, onClose, onEdit }: { guest: GuestGroup; canDelete: boolean; deleting: boolean; onDelete: () => void; onClose: () => void; onEdit: () => void }) {
+  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="guest-detail-title"><header className="dialog-header"><div><span className="guest-eyebrow">GUEST DETAILS</span><h2 id="guest-detail-title">{guest.family_name}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="detail-body"><div className="detail-highlight"><Users size={18} /><strong>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</strong><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span></div><dl className="detail-list"><DetailLine label="Main contact" value={guest.contact_name || 'Not added'} /><DetailLine label="Phone number" value={guest.phone || 'Not added'} /><DetailLine label="Invitation" value={guest.invitation_sent ? `Sent${guest.invitation_sent_at ? ` · ${formatDate(guest.invitation_sent_at)}` : ''}` : 'Not sent'} /><DetailLine label="Invitation call" value={guest.invitation_call_made ? `Made${guest.last_called_at ? ` · ${formatDate(guest.last_called_at)}` : ''}` : 'Not made'} /><DetailLine label="Check-in" value={formatDate(guest.check_in_at) || 'Not added'} /><DetailLine label="Check-out" value={formatDate(guest.check_out_at) || 'Not added'} /><DetailLine label="Number of rooms" value={guest.room_count === null ? 'Not added' : String(guest.room_count)} /><DetailLine label="Room numbers assigned" value={guest.assigned_room_numbers.join(', ') || 'Not assigned'} /><DetailLine label="Note" value={guest.notes || 'None'} /></dl></div><footer className="dialog-actions detail-actions"><button className="secondary-button" onClick={onClose}>Close</button><button className="primary-button" onClick={onEdit}><Edit3 size={16} /> Edit guest</button>{canDelete && <button className="danger-button danger-icon-button" onClick={onDelete} disabled={deleting} aria-label="Delete guest" title="Delete guest"><Trash2 size={15} /></button>}</footer></section></div>
 }
 
 function DetailLine({ label, value }: { label: string; value: string }) {
