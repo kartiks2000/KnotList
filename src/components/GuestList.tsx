@@ -26,6 +26,8 @@ export type GuestGroup = {
   rsvp_status: RsvpStatus
   check_in_at: string | null
   check_out_at: string | null
+  checked_in: boolean
+  checked_out: boolean
   room_count: number | null
   assigned_room_numbers: string[]
   notes: string
@@ -156,6 +158,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const [canManageGuests, setCanManageGuests] = useState(false)
   const [deletingGuestId, setDeletingGuestId] = useState<string | null>(null)
   const [savingGiftFields, setSavingGiftFields] = useState<Set<string>>(() => new Set())
+  const [savingLodgingStatuses, setSavingLodgingStatuses] = useState<Set<string>>(() => new Set())
   const [peopleOpen, setPeopleOpen] = useState(false)
 
   async function loadGuests() {
@@ -289,6 +292,28 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     }
   }
 
+  async function updateLodgingStatus(guest: GuestGroup, checkedIn: boolean, checkedOut: boolean) {
+    if (!supabase || !canManageLodging) return
+    const key = guest.id
+    setSavingLodgingStatuses(current => new Set(current).add(key))
+    setGuests(current => current.map(item => item.id === key ? { ...item, checked_in: checkedIn, checked_out: checkedOut } : item))
+    const { data, error } = await supabase.rpc('update_workspace_lodging_status', {
+      requested_workspace_id: workspaceId,
+      requested_guest_group_id: guest.id,
+      requested_checked_in: checkedIn,
+      requested_checked_out: checkedOut,
+    })
+    setSavingLodgingStatuses(current => { const next = new Set(current); next.delete(key); return next })
+    const updated = Array.isArray(data) ? data[0] : data
+    if (error || !updated) {
+      setGuests(current => current.map(item => item.id === key ? { ...item, checked_in: guest.checked_in, checked_out: guest.checked_out } : item))
+      setToast('Could not save the check-in status. Please try again.')
+      window.setTimeout(() => setToast(''), 3500)
+      return
+    }
+    setGuests(current => current.map(item => item.id === key ? { ...item, ...updated } : item))
+  }
+
   async function markInvitationSentFromShare(guestId: string, sentAt: string) {
     if (!supabase || !canManageGuests) return false
     const guest = guests.find(item => item.id === guestId)
@@ -403,7 +428,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
           {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading guests…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one guest</h2><p>Add a guest you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first guest</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} canDelete={canManageGuests} deletingGuestId={deletingGuestId} onDelete={guest => void deleteGuest(guest)} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Guests you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} canDelete={canManageGuests} deleting={deletingGuestId === guest.id} onDelete={() => void deleteGuest(guest)} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
           <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
         </div>
-        </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} onViewDocuments={setLodgingDocumentsGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : section === 'tasks' && canAccessTasks ? <TasksView workspaceId={workspaceId} canManage={canManageTasks} /> : section === 'whatsapp' && canManageGuests ? <WhatsAppInvites workspaceId={workspaceId} workspaceName={workspaceName} guests={guests} onMarkInvitationSent={markInvitationSentFromShare} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
+        </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} savingStatuses={savingLodgingStatuses} onStatusChange={updateLodgingStatus} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} onViewDocuments={setLodgingDocumentsGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : section === 'tasks' && canAccessTasks ? <TasksView workspaceId={workspaceId} canManage={canManageTasks} /> : section === 'whatsapp' && canManageGuests ? <WhatsAppInvites workspaceId={workspaceId} workspaceName={workspaceName} guests={guests} onMarkInvitationSent={markInvitationSentFromShare} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
       </main>
       <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => setSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}{canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => setSection('whatsapp')}><MessageCircle size={18} /><span>Invite</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
       </div>
@@ -502,7 +527,7 @@ function GiftTracker({ guests, workspaceName, loading, loadError, canEdit, savin
   </>
 }
 
-function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onViewModeChange, canEdit, onRetry, onEdit, onViewDocuments }: {
+function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onViewModeChange, canEdit, savingStatuses, onStatusChange, onRetry, onEdit, onViewDocuments }: {
   guests: GuestGroup[]
   workspaceName: string
   loading: boolean
@@ -510,11 +535,14 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
   viewMode: ViewMode
   onViewModeChange: (viewMode: ViewMode) => void
   canEdit: boolean
+  savingStatuses: Set<string>
+  onStatusChange: (guest: GuestGroup, checkedIn: boolean, checkedOut: boolean) => void
   onRetry: () => void
   onEdit: (guest: GuestGroup) => void
   onViewDocuments: (guest: GuestGroup) => void
 }) {
   const [roomFilter, setRoomFilter] = useState<'all' | 'allocated' | 'unallocated'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'checked-in' | 'checked-out'>('all')
   const [search, setSearch] = useState('')
   const [exportError, setExportError] = useState('')
   const eligibleGuests = guests.filter(guest => guest.rsvp_status !== 'declined')
@@ -523,16 +551,19 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
   const hasAssignedRooms = (guest: GuestGroup) => (guest.assigned_room_numbers ?? []).some(room => room.trim().length > 0)
   const allocatedGuests = eligibleGuests.filter(hasAssignedRooms).length
   const unallocatedGuests = eligibleGuests.length - allocatedGuests
+  const checkedInGuests = eligibleGuests.filter(guest => guest.checked_in).length
+  const checkedOutGuests = eligibleGuests.filter(guest => guest.checked_out).length
   const searchTerm = search.trim().toLocaleLowerCase()
   const visibleGuests = eligibleGuests.filter(guest => {
     const matchesRoomFilter = roomFilter === 'all' || (roomFilter === 'allocated' ? hasAssignedRooms(guest) : !hasAssignedRooms(guest))
+    const matchesStatusFilter = statusFilter === 'all' || (statusFilter === 'checked-in' ? guest.checked_in : guest.checked_out)
     const matchesSearch = !searchTerm || guest.family_name.toLocaleLowerCase().includes(searchTerm) || guest.assigned_room_numbers.some(room => room.toLocaleLowerCase().includes(searchTerm))
-    return matchesRoomFilter && matchesSearch
+    return matchesRoomFilter && matchesStatusFilter && matchesSearch
   })
 
   async function exportLodging(format: 'excel' | 'pdf') {
-    const headers = ['Guest name', 'Number of guests', 'Total rooms', 'Allotted room numbers']
-    const rows = visibleGuests.map(guest => [guest.family_name, guest.guest_count, guest.room_count ?? '', guest.assigned_room_numbers.filter(room => room.trim()).join(', ')])
+    const headers = ['Guest name', 'Number of guests', 'Total rooms', 'Allotted room numbers', 'Checked in', 'Checked out']
+    const rows = visibleGuests.map(guest => [guest.family_name, guest.guest_count, guest.room_count ?? '', guest.assigned_room_numbers.filter(room => room.trim()).join(', '), guest.checked_in ? 'Yes' : 'No', guest.checked_out ? 'Yes' : 'No'])
     const table = { title: 'Lodging assignments', headers, rows }
     const name = `knotlist-${fileSlug(workspaceName)}-lodging`
     setExportError('')
@@ -547,15 +578,15 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
   return <>
     <div className="lodging-heading"><div><span className="guest-eyebrow">ROOM OVERVIEW</span><h1>Lodging</h1><p>Guests with declined RSVPs aren’t listed here.</p></div><div className="lodging-summary"><strong>{guestTotal}</strong><span>guests</span><i /><strong>{roomTotal}</strong><span>total rooms</span></div></div>
     {!loading && !loadError && eligibleGuests.length > 0 && <label className="lodging-search"><Search size={17} /><span className="sr-only">Search guests or room numbers</span><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search guests or room numbers" /><button type="button" onClick={() => setSearch('')} aria-label="Clear lodging search" title="Clear search" disabled={!search}><X size={15} /></button></label>}
-    {!loading && !loadError && eligibleGuests.length > 0 && <div className="lodging-view-row"><div className="lodging-filters" role="group" aria-label="Filter by room allocation"><button className={`filter-chip ${roomFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'all'} onClick={() => setRoomFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button><button className={`filter-chip ${roomFilter === 'allocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'allocated'} onClick={() => setRoomFilter('allocated')}>Allocated <span className="filter-count">{allocatedGuests}</span></button><button className={`filter-chip ${roomFilter === 'unallocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'unallocated'} onClick={() => setRoomFilter('unallocated')}>Unallocated <span className="filter-count">{unallocatedGuests}</span></button></div><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportLodging('excel')} onPdf={() => void exportLodging('pdf')} disabled={visibleGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Lodging view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => onViewModeChange('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => onViewModeChange('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
+    {!loading && !loadError && eligibleGuests.length > 0 && <div className="lodging-controls"><div className="lodging-filters" role="group" aria-label="Filter by room allocation"><button className={`filter-chip ${roomFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'all'} onClick={() => setRoomFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button><button className={`filter-chip ${roomFilter === 'allocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'allocated'} onClick={() => setRoomFilter('allocated')}>Allocated <span className="filter-count">{allocatedGuests}</span></button><button className={`filter-chip ${roomFilter === 'unallocated' ? 'filter-active' : ''}`} aria-pressed={roomFilter === 'unallocated'} onClick={() => setRoomFilter('unallocated')}>Unallocated <span className="filter-count">{unallocatedGuests}</span></button></div><div className="lodging-filters" role="group" aria-label="Filter by check-in status"><button className={`filter-chip ${statusFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={statusFilter === 'all'} onClick={() => setStatusFilter('all')}>All stays</button><button className={`filter-chip ${statusFilter === 'checked-in' ? 'filter-active' : ''}`} aria-pressed={statusFilter === 'checked-in'} onClick={() => setStatusFilter('checked-in')}>Checked in <span className="filter-count">{checkedInGuests}</span></button><button className={`filter-chip ${statusFilter === 'checked-out' ? 'filter-active' : ''}`} aria-pressed={statusFilter === 'checked-out'} onClick={() => setStatusFilter('checked-out')}>Checked out <span className="filter-count">{checkedOutGuests}</span></button></div><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportLodging('excel')} onPdf={() => void exportLodging('pdf')} disabled={visibleGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Lodging view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => onViewModeChange('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => onViewModeChange('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
     {exportError && <p className="export-error" role="alert">{exportError}</p>}
     <div className={`lodging-data-scroll ${viewMode === 'cards' ? 'lodging-cards-mode' : ''}`}>
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading lodging…</div>
         : loadError ? <div className="guest-state error-state"><h2>Couldn’t load lodging</h2><p>Check your connection or workspace access, then try again.</p><button className="secondary-button" onClick={onRetry}>Try again</button></div>
           : eligibleGuests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No guests for lodging</h2><p>Guests with a declined RSVP are excluded from lodging.</p></div>
-            : visibleGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try another name, room number, or allocation filter.</p><button className="text-button" onClick={() => { setSearch(''); setRoomFilter('all') }}>Clear search and filters</button></div>
-            : viewMode === 'spreadsheet' ? <><div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Guest</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th><th className="lodging-action-heading"><span className="sr-only">Guest actions</span></th></tr></thead><tbody>{visibleGuests.map(guest => <tr key={guest.id}><th scope="row"><button type="button" className="lodging-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td><td className="lodging-action"><span className="lodging-row-actions"><button className="sheet-edit-button" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={16} /></button>{canEdit && <button className="sheet-edit-button" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={16} /></button>}</span></td></tr>)}</tbody></table></div><p className="spreadsheet-hint lodging-spreadsheet-hint">Scroll sideways to see more columns.</p></>
-              : <section className="lodging-card-list" aria-label="Lodging cards">{visibleGuests.map(guest => <article className="lodging-card" key={guest.id}><div className="lodging-card-heading"><div><button type="button" className="lodging-guest-name lodging-card-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button><span>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span></div><div className="lodging-card-actions"><button className="lodging-card-edit" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={17} /></button>{canEdit && <button className="lodging-card-edit" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={17} /></button>}</div></div><dl className="lodging-card-details"><div><dt>Total rooms</dt><dd>{guest.room_count ?? 'Not set'}</dd></div><div><dt>Allotted room numbers</dt><dd>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || 'Not allotted'}</dd></div></dl></article>)}</section>}
+            : visibleGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try another name, room number, or lodging status filter.</p><button className="text-button" onClick={() => { setSearch(''); setRoomFilter('all'); setStatusFilter('all') }}>Clear search and filters</button></div>
+            : viewMode === 'spreadsheet' ? <><div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Guest</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th><th>Checked in</th><th>Checked out</th><th className="lodging-action-heading"><span className="sr-only">Guest actions</span></th></tr></thead><tbody>{visibleGuests.map(guest => <tr key={guest.id}><th scope="row"><button type="button" className="lodging-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td><td><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_in} disabled={!canEdit || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked in`} onChange={event => onStatusChange(guest, event.target.checked, event.target.checked ? guest.checked_out : false)} /><span>{guest.checked_in ? 'Yes' : ''}</span></label></td><td><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_out} disabled={!canEdit || !guest.checked_in || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked out`} onChange={event => onStatusChange(guest, guest.checked_in, event.target.checked)} /><span>{guest.checked_out ? 'Yes' : ''}</span></label></td><td className="lodging-action"><span className="lodging-row-actions"><button className="sheet-edit-button" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={16} /></button>{canEdit && <button className="sheet-edit-button" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={16} /></button>}</span></td></tr>)}</tbody></table></div><p className="spreadsheet-hint lodging-spreadsheet-hint">Scroll sideways to see more columns.</p></>
+              : <section className="lodging-card-list" aria-label="Lodging cards">{visibleGuests.map(guest => <article className="lodging-card" key={guest.id}><div className="lodging-card-heading"><div><button type="button" className="lodging-guest-name lodging-card-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button><span>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span></div><div className="lodging-card-actions"><button className="lodging-card-edit" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={17} /></button>{canEdit && <button className="lodging-card-edit" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={17} /></button>}</div></div><div className="lodging-card-roomline"><span><small>Rooms</small><strong>{guest.room_count ?? '—'}</strong></span><span className="lodging-card-roomnumbers"><small>Room numbers</small><strong>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || 'Not allotted'}</strong></span></div><div className="lodging-card-statuses"><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_in} disabled={!canEdit || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked in`} onChange={event => onStatusChange(guest, event.target.checked, event.target.checked ? guest.checked_out : false)} /><span>Checked in{guest.checked_in ? ' · Yes' : ''}</span></label><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_out} disabled={!canEdit || !guest.checked_in || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked out`} onChange={event => onStatusChange(guest, guest.checked_in, event.target.checked)} /><span>Checked out{guest.checked_out ? ' · Yes' : ''}</span></label></div></article>)}</section>}
     </div>
     {!loading && !loadError && eligibleGuests.length > 0 && <footer className="guest-footer lodging-footer">Your lodging details are shared with people who have access to this planning space.</footer>}
   </>
@@ -584,6 +615,8 @@ function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
       requested_guest_count: Number(guestCount),
       requested_room_count: roomCount === '' ? null : Number(roomCount),
       requested_room_numbers: roomNumbers.map(room => room.trim()).filter(Boolean),
+      requested_checked_in: guest.checked_in,
+      requested_checked_out: guest.checked_out,
     })
     setSaving(false)
     if (saveError) {
