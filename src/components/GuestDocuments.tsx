@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { FileText, Image as ImageIcon, LoaderCircle, Trash2, Upload } from 'lucide-react'
+import { Download, FileText, Image as ImageIcon, LoaderCircle, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 const bucket = 'guest-documents'
@@ -126,6 +126,25 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
     else window.location.href = data.signedUrl
   }
 
+  async function downloadDocument(document: GuestDocument) {
+    if (!supabase) return
+    setBusyId(document.id)
+    setError('')
+    const { data, error: linkError } = await supabase.storage.from(bucket).createSignedUrl(document.storage_path, 60 * 10, { download: document.file_name })
+    setBusyId('')
+    if (linkError || !data?.signedUrl) {
+      setError('Could not download this file. Check your access and try again.')
+      return
+    }
+    const link = window.document.createElement('a')
+    link.href = data.signedUrl
+    link.download = document.file_name
+    link.rel = 'noopener'
+    window.document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
   async function deleteDocument(document: GuestDocument) {
     if (!supabase || !canManage || busyId) return
     if (!window.confirm('Delete this guest document?')) return
@@ -154,6 +173,6 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
     {message && <p className="guest-documents-message" role="status">{message}</p>}
     {loading ? <p className="guest-documents-empty"><LoaderCircle className="spin" size={15} /> Loading documents…</p>
       : documents.length === 0 ? <p className="guest-documents-empty">No documents added yet.</p>
-        : <ul className="guest-document-list">{documents.map(document => <li key={document.id}><span className="guest-document-icon">{document.mime_type === 'application/pdf' ? <FileText size={17} /> : <ImageIcon size={17} />}</span><span className="guest-document-info"><strong>{document.file_name}</strong><small>{formatFileSize(Number(document.size_bytes))} · Added {formatAddedAt(document.created_at)}</small></span><button type="button" className="guest-document-open" disabled={busyId === document.id} onClick={() => void openDocument(document)}>{busyId === document.id ? <LoaderCircle className="spin" size={15} /> : 'Open'}</button>{canManage && <button type="button" className="guest-document-delete" aria-label={`Delete ${document.file_name}`} title="Delete document" disabled={busyId === document.id || uploading} onClick={() => void deleteDocument(document)}><Trash2 size={15} /></button>}</li>)}</ul>}
+        : <ul className="guest-document-list">{documents.map(item => <li key={item.id}><span className="guest-document-icon">{item.mime_type === 'application/pdf' ? <FileText size={17} /> : <ImageIcon size={17} />}</span><span className="guest-document-info"><strong>{item.file_name}</strong><small>{formatFileSize(Number(item.size_bytes))} · Added {formatAddedAt(item.created_at)}</small></span><button type="button" className="guest-document-open" disabled={busyId === item.id} onClick={() => void openDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : 'View'}</button><button type="button" className="guest-document-download" aria-label={`Download ${item.file_name}`} title="Download document" disabled={busyId === item.id} onClick={() => void downloadDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}</button>{canManage && <button type="button" className="guest-document-delete" aria-label={`Delete ${item.file_name}`} title="Delete document" disabled={busyId === item.id || uploading} onClick={() => void deleteDocument(item)}><Trash2 size={15} /></button>}</li>)}</ul>}
   </section>
 }
