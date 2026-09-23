@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, Gift, Heart, LoaderCircle, Mail, Plus, Search, Table2, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Edit3, FileDown, FileSpreadsheet, Gift, Heart, ListChecks, LoaderCircle, Mail, Plus, Search, Table2, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { TasksView } from './TasksView'
 
 type RsvpStatus = 'pending' | 'confirmed' | 'maybe' | 'declined'
 type Filter = 'all' | 'invite' | 'rsvp' | 'confirmed'
 type ViewMode = 'cards' | 'spreadsheet'
-type WorkspaceSection = 'guests' | 'lodging' | 'gifts'
+type WorkspaceSection = 'guests' | 'lodging' | 'gifts' | 'tasks'
 type GiftField = 'welcome_gift_given' | 'final_gift_given'
 
 export type GuestGroup = {
@@ -145,6 +146,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const [canAccessGuests, setCanAccessGuests] = useState(false)
   const [canAccessLodging, setCanAccessLodging] = useState(false)
   const [canAccessGifts, setCanAccessGifts] = useState(false)
+  const [canAccessTasks, setCanAccessTasks] = useState(false)
+  const [canManageTasks, setCanManageTasks] = useState(false)
   const [canManageLodging, setCanManageLodging] = useState(false)
   const [canManageGifts, setCanManageGifts] = useState(false)
   const [canManageGuests, setCanManageGuests] = useState(false)
@@ -156,13 +159,15 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     if (!supabase) return
     setLoading(true)
     setLoadError('')
-    const [guestRead, guestManage, lodgingRead, lodgingManage, giftsRead, giftsManage] = await Promise.all([
+    const [guestRead, guestManage, lodgingRead, lodgingManage, giftsRead, giftsManage, workspaceRead, tasksManage] = await Promise.all([
       supabase.rpc('has_permission', { requested_permission: 'app_data.read', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'app_data.manage', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'lodging.read', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'lodging.manage', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'gifts.read', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'gifts.manage', requested_workspace_id: workspaceId }),
+      supabase.rpc('has_permission', { requested_permission: 'workspace.read', requested_workspace_id: workspaceId }),
+      supabase.rpc('has_permission', { requested_permission: 'tasks.manage', requested_workspace_id: workspaceId }),
     ])
     const canReadGuestData = !guestRead.error && guestRead.data === true
     const canManageGuestData = !guestManage.error && guestManage.data === true
@@ -172,6 +177,9 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setCanManageGuests(canManageGuestData)
     setCanAccessLodging(canReadLodgingData)
     setCanAccessGifts(!giftsRead.error && giftsRead.data === true)
+    // Tasks are an Admin-only module, even though other workspace roles can read workspace data.
+    setCanAccessTasks(!tasksManage.error && tasksManage.data === true)
+    setCanManageTasks(!tasksManage.error && tasksManage.data === true)
     setCanManageLodging(canManageLodgingData)
     setCanManageGifts(!giftsManage.error && giftsManage.data === true)
 
@@ -193,6 +201,9 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
         setGuests((data ?? []) as GuestGroup[])
         setSection('lodging')
       }
+    } else if (!workspaceRead.error && workspaceRead.data === true) {
+      setGuests([])
+      setSection('tasks')
     } else {
       setLoadError('You do not have access to guest or lodging details in this planning space.')
       setGuests([])
@@ -207,6 +218,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setCanAccessGuests(false)
     setCanAccessLodging(false)
     setCanAccessGifts(false)
+    setCanAccessTasks(false)
+    setCanManageTasks(false)
     setCanManageLodging(false)
     setCanManageGifts(false)
     setSavingGiftFields(new Set())
@@ -338,6 +351,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
             {canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={17} /><span>Guests</span></button>}
             {canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={17} /><span>Lodging</span></button>}
             {canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={17} /><span>Gifts</span></button>}
+            {canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => setSection('tasks')}><ListChecks size={17} /><span>Tasks</span></button>}
           </nav>
         </aside>
 
@@ -356,9 +370,9 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
           {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading guests…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one guest</h2><p>Add a guest you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first guest</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} canDelete={canManageGuests} deletingGuestId={deletingGuestId} onDelete={guest => void deleteGuest(guest)} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Guests you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} canDelete={canManageGuests} deleting={deletingGuestId === guest.id} onDelete={() => void deleteGuest(guest)} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
           <footer className="guest-footer">Your guest list is shared with people who have access to this planning space.</footer>
         </div>
-        </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
+        </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : section === 'tasks' && canAccessTasks ? <TasksView workspaceId={workspaceId} canManage={canManageTasks} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
       </main>
-      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
+      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => setSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => setSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => setSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => setSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}<button onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
       </div>
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={guest => notifySaved(guest, Boolean(editingGuest))} />}
@@ -375,6 +389,7 @@ type WorkspacePerson = {
   email: string
   display_name: string
   email_confirmed_at: string | null
+  role_key: string
   role_name: string
 }
 
@@ -558,6 +573,7 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, ca
   const [membersLoading, setMembersLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [removingMemberId, setRemovingMemberId] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const inviteRoles: { key: InviteRoleKey; name: string }[] = [
@@ -591,7 +607,7 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, ca
     const roleIds = [...new Set(rows.map(row => row.role_id))]
     const [profilesResult, rolesResult] = await Promise.all([
       userIds.length ? supabase.from('profiles').select('id, email, display_name, email_confirmed_at').in('id', userIds) : Promise.resolve({ data: [], error: null }),
-      roleIds.length ? supabase.from('roles').select('id, name').in('id', roleIds) : Promise.resolve({ data: [], error: null }),
+      roleIds.length ? supabase.from('roles').select('id, key, name').in('id', roleIds) : Promise.resolve({ data: [], error: null }),
     ])
     if (profilesResult.error || rolesResult.error) {
       setError('Could not load member details. Check that the workspace invitation migration is applied.')
@@ -608,6 +624,7 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, ca
         email: profile?.email ?? '',
         display_name: profile?.display_name ?? '',
         email_confirmed_at: profile?.email_confirmed_at ?? null,
+        role_key: role?.key ?? '',
         role_name: role?.name ?? 'Member',
       }
     }))
@@ -647,7 +664,24 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, ca
     await loadMembers()
   }
 
-  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span>{inviteRoles.length > 1 ? <select aria-label="Access level" value={roleKey} onChange={event => setRoleKey(event.target.value as InviteRoleKey)}>{inviteRoles.map(role => <option key={role.key} value={role.key}>{role.name}</option>)}</select> : <strong>{selectedRoleName}</strong>}</div><p className="people-help">{roleKey === 'lodging_manager' ? 'This gives access to guest counts, room totals, and allotted room numbers in this planning space. It does not include guest contacts, invitations, replies, or notes.' : 'This adds Admin access to this planning space only.'} New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting || inviteRoles.length === 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : `Invite ${selectedRoleName}`}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span></li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
+  async function removeAdmin(person: WorkspacePerson) {
+    if (!supabase || !canInviteAdmins || person.role_key !== 'admin' || removingMemberId) return
+    const personLabel = person.display_name || person.email || 'this Admin'
+    if (!window.confirm(`Remove ${personLabel} as an Admin from ${workspaceName}? They will lose access to this planning space.`)) return
+    setRemovingMemberId(person.id)
+    setError('')
+    setMessage('')
+    const { error: removeError } = await supabase.from('workspace_memberships').delete().eq('id', person.id).eq('workspace_id', workspaceId)
+    setRemovingMemberId('')
+    if (removeError) {
+      setError('Could not remove this Admin. Check your access and try again.')
+      return
+    }
+    setMembers(current => current.filter(member => member.id !== person.id))
+    setMessage(`${personLabel} no longer has access to this planning space.`)
+  }
+
+  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span>{inviteRoles.length > 1 ? <select aria-label="Access level" value={roleKey} onChange={event => setRoleKey(event.target.value as InviteRoleKey)}>{inviteRoles.map(role => <option key={role.key} value={role.key}>{role.name}</option>)}</select> : <strong>{selectedRoleName}</strong>}</div><p className="people-help">{roleKey === 'lodging_manager' ? 'This gives access to guest counts, room totals, and allotted room numbers in this planning space. It does not include guest contacts, invitations, replies, or notes.' : 'This adds Admin access to this planning space only.'} New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting || inviteRoles.length === 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : `Invite ${selectedRoleName}`}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span>{canInviteAdmins && person.role_key === 'admin' && <button type="button" className="people-remove-button" aria-label={`Remove ${person.display_name || person.email || 'Admin'} from this planning space`} title="Remove from this space" disabled={removingMemberId === person.id} onClick={() => void removeAdmin(person)}>{removingMemberId === person.id ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}</button>}</li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
 }
 
 function GuestCard({ guest, canDelete, deleting, onDelete, onOpen, onEdit }: { guest: GuestGroup; canDelete: boolean; deleting: boolean; onDelete: () => void; onOpen: () => void; onEdit: () => void }) {
