@@ -95,13 +95,13 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     if (!supabase || !canManage || !title.trim() || !assignedTo) return
     setSaving(true)
     setError('')
-    const { error: insertError } = await supabase.from('workspace_tasks').insert({
+    const { data: createdTask, error: insertError } = await supabase.from('workspace_tasks').insert({
       workspace_id: workspaceId,
       title: title.trim(),
       description: description.trim(),
       assigned_to: assignedTo,
       deadline: deadline || null,
-    })
+    }).select('id').single()
     if (insertError) {
       setError('Could not add this task. Check your access and try again.')
       setSaving(false)
@@ -112,6 +112,8 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     setDeadline('')
     setCreateDialogOpen(false)
     setSaving(false)
+    const { data: notificationEventId } = await supabase.rpc('get_workspace_task_notification_event_id', { requested_task_id: createdTask.id, requested_comment_id: null })
+    if (notificationEventId) void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId } })
     await loadTasks()
   }
 
@@ -151,17 +153,19 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     if (!supabase || !commentDrafts[task.id]?.trim() || busyTaskId) return
     setBusyTaskId(task.id)
     setError('')
-    const { error: insertError } = await supabase.from('workspace_task_comments').insert({
+    const { data: insertedComment, error: insertError } = await supabase.from('workspace_task_comments').insert({
       workspace_id: workspaceId,
       task_id: task.id,
       body: commentDrafts[task.id].trim(),
-    })
+    }).select('id').single()
     setBusyTaskId('')
     if (insertError) {
       setError('Could not add your comment. Please try again.')
       return
     }
     setCommentDrafts(current => ({ ...current, [task.id]: '' }))
+    const { data: notificationEventId } = await supabase.rpc('get_workspace_task_notification_event_id', { requested_task_id: task.id, requested_comment_id: insertedComment.id })
+    if (notificationEventId) void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId } })
     await loadTasks()
   }
 

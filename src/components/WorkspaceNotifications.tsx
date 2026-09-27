@@ -5,8 +5,9 @@ import { supabase } from '../lib/supabase'
 
 type WorkspaceNotification = {
   id: string
-  event_type: 'checked_in' | 'checked_out' | 'rsvp_confirmed' | 'rsvp_maybe' | 'rsvp_declined'
+  event_type: 'checked_in' | 'checked_out' | 'rsvp_confirmed' | 'rsvp_maybe' | 'rsvp_declined' | 'task_created' | 'task_comment'
   guest_name: string
+  notification_detail: string | null
   created_at: string
   read_at: string | null
 }
@@ -18,6 +19,8 @@ function notificationTitle(notification: WorkspaceNotification) {
     case 'rsvp_confirmed': return `${notification.guest_name} RSVP: Confirmed`
     case 'rsvp_maybe': return `${notification.guest_name} RSVP: Not sure yet`
     case 'rsvp_declined': return `${notification.guest_name} RSVP: Declined`
+    case 'task_created': return `New task: ${notification.guest_name}`
+    case 'task_comment': return `New comment on: ${notification.guest_name}`
   }
 }
 
@@ -73,7 +76,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
   const loadNotifications = useCallback(async () => {
     if (!supabase) return
     const { data } = await supabase.from('workspace_notifications')
-      .select('id, event_type, guest_name, created_at, read_at')
+      .select('id, event_type, guest_name, notification_detail, created_at, read_at')
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
       .limit(25)
@@ -251,7 +254,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
       <div className="notification-list">
         {notifications.length === 0 ? <p className="notification-empty">No notifications yet.</p> : notifications.map(notification => <button type="button" className={`notification-item ${notification.read_at ? '' : 'notification-unread'}`} key={notification.id} onClick={() => void markRead(notification)}>
           <span className="notification-item-icon"><Check size={14} /></span>
-          <span className="notification-item-copy"><strong>{notificationTitle(notification)}</strong><small>{timeLabel(notification.created_at)}</small></span>
+          <span className="notification-item-copy"><strong>{notificationTitle(notification)}</strong><small>{notification.notification_detail || timeLabel(notification.created_at)}</small>{notification.notification_detail && <small>{timeLabel(notification.created_at)}</small>}</span>
           {!notification.read_at && <span className="notification-unread-dot" />}
         </button>)}
       </div>
