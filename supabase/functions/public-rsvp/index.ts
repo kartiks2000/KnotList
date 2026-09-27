@@ -30,6 +30,7 @@ Deno.serve(async request => {
     rsvp?: unknown
     checkinDate?: unknown
     checkoutDate?: unknown
+    customAnswers?: unknown
   }
   try {
     input = await request.json()
@@ -67,6 +68,7 @@ Deno.serve(async request => {
       rsvp,
       ...(input.checkinDate !== undefined ? { checkinDate: input.checkinDate } : {}),
       ...(input.checkoutDate !== undefined ? { checkoutDate: input.checkoutDate } : {}),
+      ...(input.customAnswers !== undefined ? { customAnswers: input.customAnswers } : {}),
     },
   })
   if (error) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { CalendarDays, Check, Copy, Eye, Link2, LoaderCircle, Plus, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react'
+import { CalendarDays, Check, Copy, Eye, Link2, LoaderCircle, Plus, RotateCcw, Save, Settings2, Trash2, X, ListPlus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { DEFAULT_PUBLIC_RSVP_SETTINGS, dateOptionLabel, normalizePublicRsvpSettings } from '../lib/publicRsvp'
 import type { PublicRsvpDateOption, PublicRsvpSettings } from '../lib/publicRsvp'
@@ -25,6 +25,10 @@ export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId
     rsvp: 'confirmed',
     ...(settings.askCheckinDate && settings.checkinOptions[0] ? { checkinDate: settings.checkinOptions[0].date } : {}),
     ...(settings.askCheckoutDate && settings.checkoutOptions[0] ? { checkoutDate: settings.checkoutOptions[0].date } : {}),
+    ...(settings.customQuestions.length ? { customAnswers: Object.fromEntries(settings.customQuestions.map(question => [
+      question.id,
+      question.type === 'select' ? question.options[0] ?? '' : question.type === 'yes_no' ? 'yes' : 'Example answer',
+    ])) } : {}),
   }, null, 2), [token, settings])
 
   useEffect(() => {
@@ -75,6 +79,21 @@ export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId
     if ((settings.askCheckinDate && settings.checkinOptions.some(option => !option.date))
       || (settings.askCheckoutDate && settings.checkoutOptions.some(option => !option.date))) {
       setError('Choose a date for each option, or remove the empty option.')
+      return
+    }
+    if (settings.customQuestions.length > 10) {
+      setError('Add up to 10 custom questions per form.')
+      return
+    }
+    if (settings.customQuestions.some(question => !question.label.trim() || question.label.length > 80)) {
+      setError('Give each custom question a label (up to 80 characters).')
+      return
+    }
+    if (settings.customQuestions.some(question => question.type === 'select'
+      && (question.options.length < 2 || question.options.length > 20
+        || question.options.some(option => !option.trim() || option.length > 80)
+        || new Set(question.options.map(option => option.trim().toLocaleLowerCase())).size !== question.options.length))) {
+      setError('Choice questions need 2–20 unique, non-empty options of up to 80 characters each.')
       return
     }
     setSaving(true)
@@ -157,6 +176,7 @@ export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId
 
         <DateQuestionEditor title="Check-in date" description="Offer a set of check-in dates for guests to choose from." enabled={settings.askCheckinDate} options={settings.checkinOptions} onEnabled={value => update('askCheckinDate', value)} onChange={options => updateDateOptions('checkinOptions', options)} />
         <DateQuestionEditor title="Check-out date" description="Optionally collect a check-out date from a set of choices." enabled={settings.askCheckoutDate} options={settings.checkoutOptions} onEnabled={value => update('askCheckoutDate', value)} onChange={options => updateDateOptions('checkoutOptions', options)} />
+        <CustomQuestionsEditor questions={settings.customQuestions} onChange={questions => update('customQuestions', questions)} />
 
         {error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status"><Check size={15} />{message}</p>}
         <div className="rsvp-settings-save"><button className="primary-button" disabled={saving}><Save size={16} />{saving ? 'Saving…' : 'Save form settings'}</button></div>
@@ -197,10 +217,37 @@ function DateQuestionEditor({ title, description, enabled, options, onEnabled, o
   </section>
 }
 
+function CustomQuestionsEditor({ questions, onChange }: {
+  questions: PublicRsvpSettings['customQuestions']
+  onChange: (questions: PublicRsvpSettings['customQuestions']) => void
+}) {
+  function updateQuestion(index: number, patch: Partial<(typeof questions)[number]>) {
+    onChange(questions.map((question, questionIndex) => questionIndex === index ? { ...question, ...patch } : question))
+  }
+  function addQuestion() {
+    if (questions.length >= 10) return
+    onChange([...questions, { id: crypto.randomUUID(), label: '', type: 'text', required: false, options: [] }])
+  }
+  return <section className="rsvp-settings-card">
+    <div className="rsvp-settings-card-heading"><span className="rsvp-settings-icon"><ListPlus size={17} /></span><div><h2>Additional questions</h2><p>Collect extra details without changing KnotList’s standard guest fields. Up to 10 questions per form.</p></div></div>
+    {questions.length === 0 && <p className="rsvp-custom-empty">No extra questions. Add one only if you need information beyond the standard RSVP fields.</p>}
+    {questions.map((question, index) => <article className="rsvp-custom-question" key={question.id}>
+      <div className="rsvp-custom-question-heading"><span>Question {index + 1}</span><button type="button" className="rsvp-remove-date" aria-label={`Remove question ${index + 1}`} onClick={() => onChange(questions.filter((_, questionIndex) => questionIndex !== index))}><X size={15} /></button></div>
+      <label className="form-field">Question label<input value={question.label} onChange={event => updateQuestion(index, { label: event.target.value })} maxLength={80} placeholder="e.g. Dietary requirements" required /></label>
+      <div className="rsvp-custom-question-controls"><label className="form-field">Answer type<select value={question.type} onChange={event => {
+        const type = event.target.value as (typeof question.type)
+        updateQuestion(index, { type, options: type === 'select' ? ['Option 1', 'Option 2'] : [] })
+      }}><option value="text">Short answer</option><option value="yes_no">Yes or no</option><option value="select">Choose one</option></select></label><label className="rsvp-custom-required"><input type="checkbox" checked={question.required} onChange={event => updateQuestion(index, { required: event.target.checked })} /><span>Required</span></label></div>
+      {question.type === 'select' && <div className="rsvp-custom-options"><strong>Choices</strong>{question.options.map((option, optionIndex) => <div className="rsvp-custom-option" key={`${question.id}-${optionIndex}`}><input aria-label={`Choice ${optionIndex + 1}`} value={option} maxLength={80} onChange={event => updateQuestion(index, { options: question.options.map((value, i) => i === optionIndex ? event.target.value : value) })} /><button type="button" className="rsvp-remove-date" aria-label={`Remove choice ${optionIndex + 1}`} onClick={() => updateQuestion(index, { options: question.options.filter((_, i) => i !== optionIndex) })}><X size={14} /></button></div>)}<button type="button" className="rsvp-add-date" disabled={question.options.length >= 20} onClick={() => updateQuestion(index, { options: [...question.options, ''] })}><Plus size={14} />Add choice</button></div>}
+    </article>)}
+    <button type="button" className="rsvp-add-date" disabled={questions.length >= 10} onClick={addQuestion}><Plus size={15} />Add a question{questions.length >= 10 ? ' · limit reached' : ''}</button>
+  </section>
+}
+
 function CopyField({ label, value, onCopy }: { label: string; value: string; onCopy: () => void }) {
   return <div className="public-rsvp-copy-row"><input aria-label={label} value={value} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={onCopy}><Copy size={14} />Copy</button></div>
 }
 
 function RsvpFormPreview({ workspaceName, settings }: { workspaceName: string; settings: PublicRsvpSettings }) {
-  return <section className="rsvp-preview-card"><div className="rsvp-preview-heading"><Eye size={15} /><span>GUEST PREVIEW</span></div><span className="guest-eyebrow">YOU’RE INVITED</span><h2>{settings.title || 'RSVP'}</h2><p>{settings.intro || `RSVP for ${workspaceName}`}</p><div className="rsvp-preview-field"><strong>Guest name</strong><span>Name</span></div>{settings.askGuestCount && <div className="rsvp-preview-field"><strong>Number of people</strong><span>1</span></div>}<div className="rsvp-preview-field"><strong>RSVP response</strong><span>{settings.yesLabel}</span><span>{settings.noLabel}</span></div>{settings.askCheckinDate && <div className="rsvp-preview-field"><strong>Check-in date</strong>{settings.checkinOptions.map(option => <span key={option.date}>{option.label || dateOptionLabel(option.date)}</span>)}</div>}{settings.askCheckoutDate && <div className="rsvp-preview-field"><strong>Check-out date</strong>{settings.checkoutOptions.map(option => <span key={option.date}>{option.label || dateOptionLabel(option.date)}</span>)}</div>}<button type="button" className="primary-button" disabled>Send RSVP</button></section>
+  return <section className="rsvp-preview-card"><div className="rsvp-preview-heading"><Eye size={15} /><span>GUEST PREVIEW</span></div><span className="guest-eyebrow">YOU’RE INVITED</span><h2>{settings.title || 'RSVP'}</h2><p>{settings.intro || `RSVP for ${workspaceName}`}</p><div className="rsvp-preview-field"><strong>Guest name</strong><span>Name</span></div>{settings.askGuestCount && <div className="rsvp-preview-field"><strong>Number of people</strong><span>1</span></div>}<div className="rsvp-preview-field"><strong>RSVP response</strong><span>{settings.yesLabel}</span><span>{settings.noLabel}</span></div>{settings.askCheckinDate && <div className="rsvp-preview-field"><strong>Check-in date</strong>{settings.checkinOptions.map(option => <span key={option.date}>{option.label || dateOptionLabel(option.date)}</span>)}</div>}{settings.askCheckoutDate && <div className="rsvp-preview-field"><strong>Check-out date</strong>{settings.checkoutOptions.map(option => <span key={option.date}>{option.label || dateOptionLabel(option.date)}</span>)}</div>}{settings.customQuestions.map(question => <div className="rsvp-preview-field" key={question.id}><strong>{question.label}{question.required ? ' · Required' : ''}</strong><span>{question.type === 'select' ? question.options.join(' · ') : question.type === 'yes_no' ? 'Yes · No' : 'Short answer'}</span></div>)}<button type="button" className="primary-button" disabled>Send RSVP</button></section>
 }

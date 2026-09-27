@@ -3,6 +3,14 @@ export type PublicRsvpDateOption = {
   label: string
 }
 
+export type PublicRsvpCustomQuestion = {
+  id: string
+  label: string
+  type: 'text' | 'yes_no' | 'select'
+  required: boolean
+  options: string[]
+}
+
 export type PublicRsvpSettings = {
   title: string
   intro: string
@@ -13,6 +21,7 @@ export type PublicRsvpSettings = {
   checkoutOptions: PublicRsvpDateOption[]
   yesLabel: string
   noLabel: string
+  customQuestions: PublicRsvpCustomQuestion[]
 }
 
 export const DEFAULT_PUBLIC_RSVP_SETTINGS: PublicRsvpSettings = {
@@ -28,6 +37,7 @@ export const DEFAULT_PUBLIC_RSVP_SETTINGS: PublicRsvpSettings = {
   checkoutOptions: [],
   yesLabel: 'Yes, we’ll be there',
   noLabel: 'No, we can’t make it',
+  customQuestions: [],
 }
 
 export function dateOptionLabel(date: string) {
@@ -54,5 +64,17 @@ export function normalizePublicRsvpSettings(value: unknown): PublicRsvpSettings 
     checkoutOptions: options(candidate.checkoutOptions),
     yesLabel: typeof candidate.yesLabel === 'string' ? candidate.yesLabel : DEFAULT_PUBLIC_RSVP_SETTINGS.yesLabel,
     noLabel: typeof candidate.noLabel === 'string' ? candidate.noLabel : DEFAULT_PUBLIC_RSVP_SETTINGS.noLabel,
+    customQuestions: Array.isArray(candidate.customQuestions)
+      ? candidate.customQuestions.filter((question): question is PublicRsvpCustomQuestion => Boolean(
+        question && typeof question.id === 'string' && typeof question.label === 'string'
+        && ['text', 'yes_no', 'select'].includes(question.type),
+      )).map(question => ({
+        id: question.id,
+        label: question.label,
+        type: question.type,
+        required: question.required === true,
+        options: Array.isArray(question.options) ? question.options.filter(option => typeof option === 'string') : [],
+      }))
+      : [],
   }
 }
