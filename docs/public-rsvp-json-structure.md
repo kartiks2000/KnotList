@@ -7,6 +7,7 @@ Admins configure the public RSVP form from **Planning space → Settings → RSV
 - turn check-in and check-out date questions on or off;
 - add any number of date choices (up to 20 for each enabled date question).
 - add up to 10 extra questions: short answer, yes/no, or choose-one.
+- optionally request one private identification document (PDF or image), and optionally require it for Yes RSVPs.
 
 An enabled date question needs at least one date choice. Date answers are required only for a Yes RSVP. No replies are recorded without stay dates. When the number-of-people question is off, the guest record uses a count of 1.
 
@@ -30,7 +31,7 @@ There is one active link/token per planning space. Both the web link and API use
 
 ## Request requirements
 
-All requests use `POST` with a JSON body and these headers:
+Requests use `POST` with a JSON body and these headers. Use `multipart/form-data` only when attaching an identification document (see the upload example below).
 
 ```http
 Content-Type: application/json
@@ -66,6 +67,8 @@ Successful response:
     "checkoutOptions": [],
     "yesLabel": "Yes, we’ll be there",
     "noLabel": "No, we can’t make it",
+    "askIdentificationDocument": false,
+    "requireIdentificationDocument": false,
     "customQuestions": [
       {
         "id": "8b7e8dbb-cbbb-4e33-bff8-f88c04446d91",
@@ -109,6 +112,24 @@ Field rules:
 - `checkoutDate`: `YYYY-MM-DD`, required for a confirmed response when check-out is enabled; it must match one of the saved choices.
 - `customAnswers`: optional object keyed by the question IDs returned from `load`. Values must match the configured type and options. Required custom questions must have an answer. Text answers allow up to 100 words and 2,000 characters.
 - Do not include date fields for a declined response.
+
+When identification uploads are enabled, include the document using `multipart/form-data`. For example:
+
+```bash
+curl --request POST \
+  'https://ibrtphygcvswnarauyrs.supabase.co/functions/v1/public-rsvp' \
+  --header 'apikey: YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY' \
+  --form 'action=submit' \
+  --form 'token=YOUR_64_CHARACTER_RSVP_TOKEN' \
+  --form 'name=Avery Patel' \
+  --form 'guestCount=2' \
+  --form 'rsvp=confirmed' \
+  --form 'checkinDate=2027-02-19' \
+  --form 'customAnswers={"YOUR_QUESTION_ID":"Vegetarian"}' \
+  --form 'identificationDocument=@./passport.pdf;type=application/pdf'
+```
+
+Multipart fields use the same names as JSON fields; `customAnswers` is a JSON string. `identificationDocument` is one PDF or image up to 20 MB. Do not set `Content-Type` manually; the HTTP client adds the multipart boundary. Documents are stored in the private guest-documents bucket and are only readable by workspace admins. Lodging managers can view general guest attachments but cannot read identification documents. If uploads are optional, confirmed RSVPs may omit the file. If required, confirmed RSVPs must include one; declined RSVPs never need to upload one.
 
 Successful response:
 

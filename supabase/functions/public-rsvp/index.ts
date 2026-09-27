@@ -31,9 +31,29 @@ Deno.serve(async request => {
     checkinDate?: unknown
     checkoutDate?: unknown
     customAnswers?: unknown
+    identificationDocument?: File
   }
+  let identificationFile: File | null = null
   try {
-    input = await request.json()
+    if ((request.headers.get('content-type') ?? '').includes('multipart/form-data')) {
+      const form = await request.formData()
+      const value = (key: string) => {
+        const entry = form.get(key)
+        return typeof entry === 'string' ? entry : undefined
+      }
+      input = {
+        action: value('action'),
+        token: value('token'),
+        name: value('name'),
+        guestCount: value('guestCount') ? Number(value('guestCount')) : undefined,
+        rsvp: value('rsvp'),
+        checkinDate: value('checkinDate'),
+        checkoutDate: value('checkoutDate'),
+        customAnswers: value('customAnswers') ? JSON.parse(value('customAnswers')!) : undefined,
+      }
+      const upload = form.get('identificationDocument')
+      identificationFile = upload instanceof File && upload.size ? upload : null
+    } else input = await request.json()
   } catch {
     return response({ error: 'Submit a valid RSVP form.' }, 400)
   }
@@ -55,23 +75,52 @@ Deno.serve(async request => {
     return response({ workspaceName, settings: data[0].settings })
   }
 
+  const [{ data: formRows, error: formError }, { data: workspaceRows, error: workspaceError }] = await Promise.all([
+    adminClient.rpc('get_public_workspace_rsvp_form', { requested_token: token }),
+    adminClient.rpc('get_public_workspace_rsvp', { requested_token: token }),
+  ])
+  if (formError || workspaceError || !formRows?.[0] || !workspaceRows?.[0]) return response({ error: 'This RSVP link is invalid or has been turned off.' }, 404)
+  const formSettings = formRows[0].settings ?? {}
+  const documentEnabled = formSettings.askIdentificationDocument === true
+  const documentRequired = formSettings.requireIdentificationDocument === true
+  if (identificationFile && (!documentEnabled || input.rsvp !== 'confirmed')) return response({ error: 'An identification document is not expected for this response.' }, 400)
+  if (documentRequired && input.rsvp === 'confirmed' && !identificationFile) return response({ error: 'Upload an identification document to submit this RSVP.' }, 400)
+  if (identificationFile) {
+    const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
+    if (!allowedTypes.has(identificationFile.type)) return response({ error: 'Upload a PDF or image file for identification.' }, 400)
+    if (identificationFile.size < 1 || identificationFile.size > 20 * 1024 * 1024) return response({ error: 'The identification document must be 20 MB or smaller.' }, 400)
+  }
+
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   const rsvp = input.rsvp
   if (!name || name.length > 140) return response({ error: 'Enter your name (up to 140 characters).' }, 400)
   if (rsvp !== 'confirmed' && rsvp !== 'declined') return response({ error: 'Choose Yes or No for your RSVP.' }, 400)
 
+  const guestGroupId = crypto.randomUUID()
+  let documentMetadata: Record<string, unknown> | undefined
+  let uploadedPath = ''
+  if (identificationFile) {
+    const safeName = identificationFile.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(-120) || 'identification-document'
+    uploadedPath = `${workspaceRows[0].workspace_id}/${guestGroupId}/${crypto.randomUUID()}-${safeName}`
+    const { error: uploadError } = await adminClient.storage.from('guest-documents').upload(uploadedPath, identificationFile, { contentType: identificationFile.type, upsert: false })
+    if (uploadError) return response({ error: 'Could not upload the identification document. Please try again.' }, 500)
+    documentMetadata = { storagePath: uploadedPath, fileName: identificationFile.name.slice(0, 255), mimeType: identificationFile.type, sizeBytes: identificationFile.size }
+  }
   const { data, error } = await adminClient.rpc('submit_public_workspace_rsvp', {
     requested_token: token,
     requested_form_data: {
       name,
+      guestGroupId,
       ...(input.guestCount !== undefined ? { guestCount: input.guestCount } : {}),
       rsvp,
       ...(input.checkinDate !== undefined ? { checkinDate: input.checkinDate } : {}),
       ...(input.checkoutDate !== undefined ? { checkoutDate: input.checkoutDate } : {}),
       ...(input.customAnswers !== undefined ? { customAnswers: input.customAnswers } : {}),
+      ...(documentMetadata ? { identificationDocument: documentMetadata } : {}),
     },
   })
   if (error) {
+    if (uploadedPath) await adminClient.storage.from('guest-documents').remove([uploadedPath])
     const invalidLink = error.message.includes('invalid or has been turned off')
     return response({ error: invalidLink ? 'This RSVP link is invalid or has been turned off.' : 'Could not save your RSVP. Please check your answers and try again.' }, invalidLink ? 404 : 400)
   }
