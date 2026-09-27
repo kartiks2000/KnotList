@@ -5,6 +5,10 @@ import { supabase } from '../lib/supabase'
 import { dateOptionLabel, normalizePublicRsvpSettings } from '../lib/publicRsvp'
 import type { PublicRsvpSettings } from '../lib/publicRsvp'
 
+function countWords(value: string) {
+  return value.trim() ? value.trim().split(/\s+/).length : 0
+}
+
 export function PublicRsvpPage({ token }: { token: string }) {
   const [workspaceName, setWorkspaceName] = useState('')
   const [settings, setSettings] = useState<PublicRsvpSettings | null>(null)
@@ -13,8 +17,10 @@ export function PublicRsvpPage({ token }: { token: string }) {
   const [rsvp, setRsvp] = useState<'confirmed' | 'declined' | ''>('')
   const [checkinDate, setCheckinDate] = useState('')
   const [checkoutDate, setCheckoutDate] = useState('')
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const tooManyTextWords = settings?.customQuestions.some(question => question.type === 'text' && countWords(customAnswers[question.id] ?? '') > 100) ?? false
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
@@ -57,6 +63,7 @@ export function PublicRsvpPage({ token }: { token: string }) {
         ...(settings?.askGuestCount ? { guestCount: Number(guestCount) } : {}),
         ...(settings?.askCheckinDate && rsvp === 'confirmed' ? { checkinDate } : {}),
         ...(settings?.askCheckoutDate && rsvp === 'confirmed' ? { checkoutDate } : {}),
+        ...(settings?.customQuestions.length ? { customAnswers } : {}),
       },
     })
     setSaving(false)
@@ -81,8 +88,13 @@ export function PublicRsvpPage({ token }: { token: string }) {
               <fieldset className="public-rsvp-options"><legend>Will you be joining us?</legend><div className="public-rsvp-choice-row"><label className={rsvp === 'confirmed' ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name="rsvp" value="confirmed" checked={rsvp === 'confirmed'} onChange={() => setRsvp('confirmed')} required /><span>{settings?.yesLabel || 'Yes'}</span></label><label className={rsvp === 'declined' ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name="rsvp" value="declined" checked={rsvp === 'declined'} onChange={() => { setRsvp('declined'); setCheckinDate(''); setCheckoutDate('') }} /><span>{settings?.noLabel || 'No'}</span></label></div></fieldset>
               {settings?.askCheckinDate && rsvp === 'confirmed' && <fieldset className="public-rsvp-options"><legend><CalendarDays size={15} /> Check-in date</legend><div className="public-rsvp-choice-row">{settings.checkinOptions.map(option => <label key={option.date} className={checkinDate === option.date ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name="checkin" value={option.date} checked={checkinDate === option.date} onChange={() => setCheckinDate(option.date)} required /><span>{option.label || dateOptionLabel(option.date)}</span></label>)}</div></fieldset>}
               {settings?.askCheckoutDate && rsvp === 'confirmed' && <fieldset className="public-rsvp-options"><legend><CalendarDays size={15} /> Check-out date</legend><div className="public-rsvp-choice-row">{settings.checkoutOptions.map(option => <label key={option.date} className={checkoutDate === option.date ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name="checkout" value={option.date} checked={checkoutDate === option.date} onChange={() => setCheckoutDate(option.date)} required /><span>{option.label || dateOptionLabel(option.date)}</span></label>)}</div></fieldset>}
+              {settings.customQuestions.map(question => <fieldset className="public-rsvp-options public-rsvp-custom-question" key={question.id}>
+                {question.type === 'text'
+                  ? <label className="public-rsvp-label">{question.label}{question.required && <span className="public-rsvp-required">Required</span>}<textarea value={customAnswers[question.id] ?? ''} onChange={event => setCustomAnswers(current => ({ ...current, [question.id]: event.target.value }))} maxLength={2000} rows={5} placeholder="Your answer (up to 100 words)" required={question.required} /><small className={`public-rsvp-answer-count${countWords(customAnswers[question.id] ?? '') > 100 ? ' over-limit' : ''}`}>{countWords(customAnswers[question.id] ?? '')}/100 words</small></label>
+                  : <><legend>{question.label}{question.required && <span className="public-rsvp-required">Required</span>}</legend><div className="public-rsvp-choice-row">{(question.type === 'yes_no' ? [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }] : question.options.map(option => ({ value: option, label: option }))).map(option => <label key={option.value} className={customAnswers[question.id] === option.value ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name={`custom-${question.id}`} value={option.value} checked={customAnswers[question.id] === option.value} onChange={() => setCustomAnswers(current => ({ ...current, [question.id]: option.value }))} required={question.required} /><span>{option.label}</span></label>)}</div></>}
+              </fieldset>)}
               {error && <p className="public-rsvp-error" role="alert">{error}</p>}
-              <button className="primary-button public-rsvp-submit" disabled={saving || !rsvp || (rsvp === 'confirmed' && Boolean(settings?.askCheckinDate && !checkinDate || settings?.askCheckoutDate && !checkoutDate))}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Sending RSVP…' : 'Send RSVP'}</button>
+              <button className="primary-button public-rsvp-submit" disabled={saving || tooManyTextWords || !rsvp || (rsvp === 'confirmed' && Boolean(settings?.askCheckinDate && !checkinDate || settings?.askCheckoutDate && !checkoutDate))}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Sending RSVP…' : 'Send RSVP'}</button>
               <p className="public-rsvp-note">Your response will be shared with the planning team.</p>
             </form>}
     </section>
