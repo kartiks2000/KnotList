@@ -19,6 +19,8 @@ export type PublicRsvpSettings = {
   checkinOptions: PublicRsvpDateOption[]
   askCheckoutDate: boolean
   checkoutOptions: PublicRsvpDateOption[]
+  askIdentificationDocument: boolean
+  requireIdentificationDocument: boolean
   yesLabel: string
   noLabel: string
   customQuestions: PublicRsvpCustomQuestion[]
@@ -35,6 +37,8 @@ export const DEFAULT_PUBLIC_RSVP_SETTINGS: PublicRsvpSettings = {
   ],
   askCheckoutDate: false,
   checkoutOptions: [],
+  askIdentificationDocument: false,
+  requireIdentificationDocument: false,
   yesLabel: 'Yes, we’ll be there',
   noLabel: 'No, we can’t make it',
   customQuestions: [],
@@ -62,6 +66,8 @@ export function normalizePublicRsvpSettings(value: unknown): PublicRsvpSettings 
     checkinOptions: options(candidate.checkinOptions),
     askCheckoutDate: candidate.askCheckoutDate === true,
     checkoutOptions: options(candidate.checkoutOptions),
+    askIdentificationDocument: candidate.askIdentificationDocument === true,
+    requireIdentificationDocument: candidate.askIdentificationDocument === true && candidate.requireIdentificationDocument === true,
     yesLabel: typeof candidate.yesLabel === 'string' ? candidate.yesLabel : DEFAULT_PUBLIC_RSVP_SETTINGS.yesLabel,
     noLabel: typeof candidate.noLabel === 'string' ? candidate.noLabel : DEFAULT_PUBLIC_RSVP_SETTINGS.noLabel,
     customQuestions: Array.isArray(candidate.customQuestions)

@@ -83,6 +83,7 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
       .select('id, workspace_id, guest_group_id, storage_path, file_name, mime_type, size_bytes, created_at')
       .eq('workspace_id', workspaceId)
       .eq('guest_group_id', guestId)
+      .eq('document_type', 'general')
       .order('created_at', { ascending: false })
     if (queryError) {
       setError('Documents are not set up yet. Ask a project admin to apply the guest documents migration.')
@@ -175,4 +176,38 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
       : documents.length === 0 ? <p className="guest-documents-empty">No documents added yet.</p>
         : <ul className="guest-document-list">{documents.map(item => <li key={item.id}><span className="guest-document-icon">{item.mime_type === 'application/pdf' ? <FileText size={17} /> : <ImageIcon size={17} />}</span><span className="guest-document-info"><strong>{item.file_name}</strong><small>{formatFileSize(Number(item.size_bytes))} · Added {formatAddedAt(item.created_at)}</small></span><button type="button" className="guest-document-open" disabled={busyId === item.id} onClick={() => void openDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : 'View'}</button><button type="button" className="guest-document-download" aria-label={`Download ${item.file_name}`} title="Download document" disabled={busyId === item.id} onClick={() => void downloadDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}</button>{canManage && <button type="button" className="guest-document-delete" aria-label={`Delete ${item.file_name}`} title="Delete document" disabled={busyId === item.id || uploading} onClick={() => void deleteDocument(item)}><Trash2 size={15} /></button>}</li>)}</ul>}
   </section>
+}
+
+export function GuestIdentificationDocument({ workspaceId, guestId }: { workspaceId: string; guestId: string }) {
+  const [document, setDocument] = useState<GuestDocument | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    async function load() {
+      if (!supabase) return
+      const { data, error: queryError } = await supabase.from('guest_documents')
+        .select('id, workspace_id, guest_group_id, storage_path, file_name, mime_type, size_bytes, created_at')
+        .eq('workspace_id', workspaceId).eq('guest_group_id', guestId).eq('document_type', 'identification')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (!active) return
+      setDocument(data as GuestDocument | null)
+      if (queryError) setError('Could not load the identification document. Apply the identification document migration and try again.')
+      setLoading(false)
+    }
+    void load()
+    return () => { active = false }
+  }, [workspaceId, guestId])
+  async function open(download: boolean) {
+    if (!supabase || !document) return
+    setBusy(true); setError('')
+    const { data, error: linkError } = await supabase.storage.from(bucket).createSignedUrl(document.storage_path, 600, download ? { download: document.file_name } : undefined)
+    setBusy(false)
+    if (linkError || !data?.signedUrl) { setError('Could not open this file. Check admin access and try again.'); return }
+    if (download) {
+      const anchor = window.document.createElement('a'); anchor.href = data.signedUrl; anchor.download = document.file_name; anchor.rel = 'noopener'; anchor.click()
+    } else window.open(data.signedUrl, '_blank', 'noopener')
+  }
+  return <section className="guest-documents" aria-labelledby="guest-identification-title"><div className="guest-documents-heading"><div><h3 id="guest-identification-title">Identification document</h3><p>Private · visible to workspace admins</p></div></div>{error && <p className="guest-documents-error" role="alert">{error}</p>}{loading ? <p className="guest-documents-empty"><LoaderCircle className="spin" size={15} /> Loading…</p> : !document ? <p className="guest-documents-empty">No identification document submitted.</p> : <ul className="guest-document-list"><li><span className="guest-document-icon">{document.mime_type === 'application/pdf' ? <FileText size={17} /> : <ImageIcon size={17} />}</span><span className="guest-document-info"><strong>{document.file_name}</strong><small>{formatFileSize(Number(document.size_bytes))} · Added {formatAddedAt(document.created_at)}</small></span><button type="button" className="guest-document-open" disabled={busy} onClick={() => void open(false)}>{busy ? <LoaderCircle className="spin" size={15} /> : 'View'}</button><button type="button" className="guest-document-download" aria-label="Download identification document" disabled={busy} onClick={() => void open(true)}><Download size={15} /></button></li></ul>}</section>
 }
