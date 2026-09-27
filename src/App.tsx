@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { ArrowRight, CalendarDays, ChevronRight, Heart, LoaderCircle, LockKeyhole, LogOut, Mail, Plus, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { GuestList } from './components/GuestList'
+import { PublicRsvpPage } from './components/PublicRsvpPage'
 
 type Workspace = { id: string; name: string }
 
@@ -21,6 +22,7 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const publicRsvpToken = window.location.hash.startsWith('#rsvp/') ? window.location.hash.slice('#rsvp/'.length) : ''
 
   useEffect(() => {
     if (!supabase) {
@@ -75,6 +77,8 @@ function App() {
     if (authError) setError(authError.message)
     else setError('')
   }
+
+  if (publicRsvpToken) return <PublicRsvpPage token={publicRsvpToken} />
 
   if (!supabase) {
     return <main className="auth-page"><div className="auth-card setup-error"><Brand /><h1>Connect your Supabase project</h1><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env.local</code>, then restart the dev server.</p></div></main>
