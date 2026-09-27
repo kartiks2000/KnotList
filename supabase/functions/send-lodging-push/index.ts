@@ -54,7 +54,7 @@ Deno.serve(async request => {
     auth: { autoRefreshToken: false, persistSession: false },
   })
   const { data: event, error: eventError } = await adminClient.from('lodging_notification_events')
-    .select('id, actor_user_id, workspace_id, event_type, push_claimed_at')
+    .select('id, actor_user_id, workspace_id, event_type, guest_name, notification_detail, push_claimed_at')
     .eq('id', notificationEventId)
     .maybeSingle()
   if (eventError) return response({ error: 'Could not verify the lodging event.' }, 500)
@@ -66,14 +66,16 @@ Deno.serve(async request => {
     .eq('id', notificationEventId)
     .eq('actor_user_id', callerData.user.id)
     .is('push_claimed_at', null)
-    .select('id, workspace_id, event_type')
+    .select('id, workspace_id, event_type, guest_name, notification_detail')
     .maybeSingle()
   if (claimError) return response({ error: 'Could not claim the lodging notification.' }, 500)
   if (!claimedEvent) return response({ sent: 0, alreadyProcessed: true })
 
-  const recipientFunction = claimedEvent.event_type.startsWith('rsvp_')
-    ? 'get_workspace_rsvp_notification_recipient_ids'
-    : 'get_lodging_notification_recipient_ids'
+  const recipientFunction = claimedEvent.event_type.startsWith('task_')
+    ? 'get_workspace_task_notification_recipient_ids'
+    : claimedEvent.event_type.startsWith('rsvp_')
+      ? 'get_workspace_rsvp_notification_recipient_ids'
+      : 'get_lodging_notification_recipient_ids'
   const { data: recipients, error: recipientsError } = await adminClient.rpc(recipientFunction, {
     requested_workspace_id: claimedEvent.workspace_id,
   })
@@ -89,11 +91,13 @@ Deno.serve(async request => {
   if (subscriptionsError) return response({ error: 'Could not load browser subscriptions.' }, 500)
 
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey)
+  const isTaskUpdate = claimedEvent.event_type.startsWith('task_')
   const isRsvpUpdate = claimedEvent.event_type.startsWith('rsvp_')
-  const title = isRsvpUpdate ? 'Guest RSVP update' : 'Lodging update'
-  const body = isRsvpUpdate
-    ? 'A guest RSVP status has changed.'
-    : claimedEvent.event_type === 'checked_in' ? 'A guest has been checked in.' : 'A guest has been checked out.'
+  const title = isTaskUpdate ? (claimedEvent.event_type === 'task_created' ? 'New task' : 'New task comment') : isRsvpUpdate ? 'Guest RSVP update' : 'Lodging update'
+  const body = isTaskUpdate
+    ? claimedEvent.event_type === 'task_created' ? `A task was created: ${claimedEvent.guest_name}` : `A comment was added to: ${claimedEvent.guest_name}`
+    : isRsvpUpdate ? 'A guest RSVP status has changed.'
+      : claimedEvent.event_type === 'checked_in' ? 'A guest has been checked in.' : 'A guest has been checked out.'
   const payload = JSON.stringify({ title, body, url: new URL('/#home', appUrl).toString() })
   const results = await Promise.allSettled((subscriptions ?? []).map(async subscription => {
     try {
