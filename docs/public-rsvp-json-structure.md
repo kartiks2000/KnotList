@@ -27,7 +27,7 @@ The guest-facing link is created in the same Settings module, for example:
 https://knot-list.vercel.app/#rsvp/YOUR_64_CHARACTER_RSVP_TOKEN
 ```
 
-There is one active link/token per planning space. Both the web link and API use that token. Rotating or turning off the link invalidates the old token.
+There is one active shared link/token per planning space. Admins can also create a separate, unique web RSVP link for each guest from that guest’s details. Both link types use the planning space’s saved form settings. A guest-specific response updates the existing guest entry, preserves the saved guest name, and stores the entered name under **Name entered by guest**. Replacing a guest’s link invalidates only that guest’s old URL; replacing the shared link does not affect guest-specific links.
 
 ## Request requirements
 
@@ -112,6 +112,7 @@ Field rules:
 - `checkoutDate`: `YYYY-MM-DD`, required for a confirmed response when check-out is enabled; it must match one of the saved choices.
 - `customAnswers`: optional object keyed by the question IDs returned from `load`. Values must match the configured type and options. Required custom questions must have an answer. Text answers allow up to 100 words and 2,000 characters.
 - Do not include date fields for a declined response.
+- Submissions using a guest-specific token update that existing guest entry. For those tokens only, `name` is saved as the custom answer **Name entered by guest** and does not replace the guest’s saved name. Shared RSVP tokens and POST submissions using the shared token retain their existing behavior.
 
 When identification uploads are enabled, include the document using `multipart/form-data`. For example:
 
