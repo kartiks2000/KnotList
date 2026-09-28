@@ -4,6 +4,7 @@ import { CalendarDays, Check, Copy, Eye, FileText, Link2, LoaderCircle, Plus, Ro
 import { supabase } from '../lib/supabase'
 import { DEFAULT_PUBLIC_RSVP_SETTINGS, dateOptionLabel, normalizePublicRsvpSettings } from '../lib/publicRsvp'
 import type { PublicRsvpDateOption, PublicRsvpSettings } from '../lib/publicRsvp'
+import { DropdownSelect } from './DropdownSelect'
 
 export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
   const [settings, setSettings] = useState<PublicRsvpSettings>(DEFAULT_PUBLIC_RSVP_SETTINGS)
@@ -239,10 +240,10 @@ function CustomQuestionsEditor({ questions, onChange }: {
     {questions.map((question, index) => <article className="rsvp-custom-question" key={question.id}>
       <div className="rsvp-custom-question-heading"><span>Question {index + 1}</span><button type="button" className="rsvp-remove-date" aria-label={`Remove question ${index + 1}`} onClick={() => onChange(questions.filter((_, questionIndex) => questionIndex !== index))}><X size={15} /></button></div>
       <label className="form-field">Question label<input value={question.label} onChange={event => updateQuestion(index, { label: event.target.value })} maxLength={80} placeholder="e.g. Dietary requirements" required /></label>
-      <div className="rsvp-custom-question-controls"><label className="form-field">Answer type<select value={question.type} onChange={event => {
-        const type = event.target.value as (typeof question.type)
+      <div className="rsvp-custom-question-controls"><div className="form-field"><span>Answer type</span><DropdownSelect value={question.type} onChange={value => {
+        const type = value as (typeof question.type)
         updateQuestion(index, { type, options: type === 'select' ? ['Option 1', 'Option 2'] : [] })
-      }}><option value="text">Text answer</option><option value="yes_no">Yes or no</option><option value="select">Choose one</option></select></label><label className="rsvp-custom-required"><input type="checkbox" checked={question.required} onChange={event => updateQuestion(index, { required: event.target.checked })} /><span>Required</span></label></div>
+      }} ariaLabel="Answer type" className="form-dropdown-select" options={[{ value: 'text', label: 'Text answer' }, { value: 'yes_no', label: 'Yes or no' }, { value: 'select', label: 'Choose one' }]} /></div><label className="rsvp-custom-required"><input type="checkbox" checked={question.required} onChange={event => updateQuestion(index, { required: event.target.checked })} /><span>Required</span></label></div>
       {question.type === 'select' && <div className="rsvp-custom-options"><strong>Choices</strong>{question.options.map((option, optionIndex) => <div className="rsvp-custom-option" key={`${question.id}-${optionIndex}`}><input aria-label={`Choice ${optionIndex + 1}`} value={option} maxLength={80} onChange={event => updateQuestion(index, { options: question.options.map((value, i) => i === optionIndex ? event.target.value : value) })} /><button type="button" className="rsvp-remove-date" aria-label={`Remove choice ${optionIndex + 1}`} onClick={() => updateQuestion(index, { options: question.options.filter((_, i) => i !== optionIndex) })}><X size={14} /></button></div>)}<button type="button" className="rsvp-add-date" disabled={question.options.length >= 20} onClick={() => updateQuestion(index, { options: [...question.options, ''] })}><Plus size={14} />Add choice</button></div>}
     </article>)}
     <button type="button" className="rsvp-add-date" disabled={questions.length >= 10} onClick={addQuestion}><Plus size={15} />Add a question{questions.length >= 10 ? ' · limit reached' : ''}</button>

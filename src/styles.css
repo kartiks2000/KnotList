@@ -447,3 +447,59 @@
   .gift-search{margin-bottom:5px}
   .gift-filters{margin-bottom:2px}
 }
+
+/* Keep native select controls visually consistent across forms and filters. */
+select:not(.workspace-picker){
+  appearance:none;
+  -webkit-appearance:none;
+  padding-right:32px!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23687868' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 10px center;
+  background-size:13px;
+}
+.task-person-filter select{height:38px;min-width:0;padding-left:11px!important;border-radius:8px;font:500 11px 'DM Sans',sans-serif}
+.people-role-line select{min-height:36px;padding:0 32px 0 10px;border:1px solid #e5e3dc;border-radius:8px;background-color:#fff;color:#526052;font:500 11px 'DM Sans',sans-serif;outline:0}
+.people-role-line select:focus,.task-person-filter select:focus{border-color:#93a590;box-shadow:0 0 0 3px #8da18e22}
+.rsvp-select-field select{min-height:42px;padding-left:11px!important;border-radius:8px;background-color:#fff}
+.add-family-button{height:40px;min-height:40px}
+@media(max-width:650px){
+  .task-person-filter{align-items:center;gap:10px}
+  .task-person-menu{height:40px;flex:1}
+  .guest-toolbar .guest-search{height:40px}
+  .mobile-add-button{width:40px;height:40px;min-height:40px}
+}
+.dropdown-select{position:relative;display:block;width:100%;min-width:0;color:#465247}
+.dropdown-select[open]{z-index:40}
+.dropdown-select>summary{width:100%;min-height:42px;padding:0 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;list-style:none;border:1px solid #e2e1d9;border-radius:8px;background:#fff;color:#414a41;font:400 12px 'DM Sans',sans-serif;cursor:pointer}
+.dropdown-select>summary::-webkit-details-marker{display:none}
+.dropdown-select>summary::marker{content:''}
+.dropdown-select>summary span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dropdown-select>summary svg{flex:0 0 auto;color:#687868;transition:transform .15s ease}
+.dropdown-select[open]>summary svg{transform:rotate(180deg)}
+.dropdown-select>summary:hover{border-color:#cfd8cc}
+.dropdown-select>summary:focus-visible{outline:0;border-color:#93a590;box-shadow:0 0 0 3px #8da18e22}
+.dropdown-select>summary[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
+.dropdown-select-options{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:41;max-height:min(240px,45vh);overflow:auto;padding:5px;border:1px solid #e5e3dc;border-radius:9px;background:#fff;box-shadow:0 8px 24px #3038301c}
+.dropdown-select-options button{width:100%;min-height:38px;padding:0 10px;display:flex;align-items:center;border:0;border-radius:6px;background:transparent;color:#59675a;text-align:left;font:500 11px 'DM Sans',sans-serif;cursor:pointer}
+.dropdown-select-options button:hover,.dropdown-select-options button.dropdown-select-option-selected{background:#edf0e9;color:#506650}
+.dropdown-select-options button:focus-visible{outline:2px solid #93a590;outline-offset:-2px}
+.form-dropdown-select>summary{min-height:42px}
+.task-person-filter{min-width:0}
+.task-person-menu{width:170px;flex:0 1 170px}
+.task-person-menu>summary{min-height:38px;padding:0 10px;font-size:11px}
+.people-role-menu{width:160px}
+.people-role-menu>summary{min-height:36px;padding:0 10px;font-size:11px}
+.rsvp-select-field .dropdown-select>summary{min-height:42px}
+.workspace-menu{width:auto;max-width:240px}
+.workspace-menu>summary{width:auto;max-width:240px;min-height:34px;padding:0;border:0;background:transparent;color:#535f53;font-size:12px;font-weight:600}
+.workspace-menu>summary:hover{border-color:transparent;background:transparent}
+.workspace-menu .dropdown-select-options{min-width:190px;right:auto}
+@media(max-width:650px){
+  .task-person-menu{width:auto;min-width:0;flex:1}
+  .task-person-menu>summary{min-height:40px}
+  .people-role-menu{width:150px}
+  .workspace-menu{max-width:132px}
+  .workspace-menu>summary{max-width:132px;min-height:30px;font-size:10px}
+  .whatsapp-guest-field .dropdown-select>summary{min-height:44px}
+}

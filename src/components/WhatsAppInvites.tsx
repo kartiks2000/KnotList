@@ -3,6 +3,7 @@ import type { ChangeEvent } from 'react'
 import { ImagePlus, LoaderCircle, MessageCircle, Save, Video, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { GuestGroup } from './GuestList'
+import { DropdownSelect } from './DropdownSelect'
 
 const bucket = 'whatsapp-invite-media'
 const starterMessage = 'We would love for you to join us as we celebrate our wedding. We hope you can be there!'
@@ -246,7 +247,7 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
     <div className="whatsapp-editor">
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading invitation…</div> : <>
         <label className="form-field whatsapp-message-field">Invitation message<textarea rows={5} maxLength={3000} value={template} onChange={event => setTemplate(event.target.value)} placeholder="Write your invitation…" /></label>
-        <label className="form-field whatsapp-guest-field">Select guest to track invitation <span className="optional-label">optional</span><select value={selectedGuestId} onChange={event => setSelectedGuestId(event.target.value)}><option value="">No guest selected</option>{guests.map(guest => <option value={guest.id} key={guest.id}>{guest.contact_name ? `${guest.contact_name} · ${guest.family_name}` : guest.family_name}</option>)}</select></label>
+        <div className="form-field whatsapp-guest-field"><span>Select guest to track invitation <span className="optional-label">optional</span></span><DropdownSelect value={selectedGuestId} onChange={setSelectedGuestId} ariaLabel="Select guest to track invitation" placeholder="No guest selected" className="form-dropdown-select" options={[{ value: '', label: 'No guest selected' }, ...guests.map(guest => ({ value: guest.id, label: guest.contact_name ? `${guest.contact_name} · ${guest.family_name}` : guest.family_name }))]} /></div>
         <div className="whatsapp-preview"><span>MESSAGE PREVIEW</span><p>{message || 'Your invitation preview will appear here.'}</p></div>
         <div className="whatsapp-media-row"><div className="whatsapp-media-copy"><strong>Image or video</strong><small>{attachmentName || 'Optional · up to 20 MB'}</small></div>{attachmentName && <button type="button" className="whatsapp-remove-media" aria-label="Remove attached media" title="Remove attachment" onClick={() => { setMediaFile(null); setMediaChanged(false); setRemoveSavedMedia(Boolean(savedTemplate?.media_path)) }}><X size={16} /></button>}<label className="secondary-button whatsapp-attach-button"><ImagePlus size={16} />{attachmentName ? 'Change media' : 'Add media'}<input type="file" accept="image/*,video/*" onChange={event => void chooseMedia(event)} /></label></div>
         {attachmentName && <div className="whatsapp-file-note">{(mediaFile?.type ?? savedTemplate?.media_mime_type ?? '').startsWith('video/') ? <Video size={15} /> : <ImagePlus size={15} />} This file is saved with the template. On supported browsers, use the share sheet to choose WhatsApp and a contact.</div>}
