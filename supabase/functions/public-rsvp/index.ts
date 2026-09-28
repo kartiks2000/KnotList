@@ -72,7 +72,7 @@ Deno.serve(async request => {
     if (error) return response({ error: 'Could not load this RSVP page.' }, 500)
     const workspaceName = data?.[0]?.workspace_name
     if (!workspaceName) return response({ error: 'This RSVP link is invalid or has been turned off.' }, 404)
-    return response({ workspaceName, settings: data[0].settings })
+    return response({ workspaceName, settings: data[0].settings, isPersonalized: Boolean(data[0].guest_group_id) })
   }
 
   const [{ data: formRows, error: formError }, { data: workspaceRows, error: workspaceError }] = await Promise.all([
@@ -80,6 +80,13 @@ Deno.serve(async request => {
     adminClient.rpc('get_public_workspace_rsvp', { requested_token: token }),
   ])
   if (formError || workspaceError || !formRows?.[0] || !workspaceRows?.[0]) return response({ error: 'This RSVP link is invalid or has been turned off.' }, 404)
+  const isPersonalized = Boolean(workspaceRows[0].guest_group_id)
+  if (isPersonalized !== Boolean(formRows[0].guest_group_id)
+    || (isPersonalized && workspaceRows[0].guest_group_id !== formRows[0].guest_group_id)) {
+    console.error('Public RSVP link lookup mismatch:', { isPersonalized })
+    return response({ error: 'This RSVP link could not be verified. Please ask the planner for a fresh link.' }, 404)
+  }
+  console.info('Public RSVP submission route:', { isPersonalized })
   const formSettings = formRows[0].settings ?? {}
   const documentEnabled = formSettings.askIdentificationDocument === true
   const documentRequired = formSettings.requireIdentificationDocument === true
@@ -96,7 +103,7 @@ Deno.serve(async request => {
   if (!name || name.length > 140) return response({ error: 'Enter your name (up to 140 characters).' }, 400)
   if (rsvp !== 'confirmed' && rsvp !== 'declined') return response({ error: 'Choose Yes or No for your RSVP.' }, 400)
 
-  const guestGroupId = crypto.randomUUID()
+  const guestGroupId = workspaceRows[0].guest_group_id || crypto.randomUUID()
   let documentMetadata: Record<string, unknown> | undefined
   let uploadedPath = ''
   if (identificationFile) {
@@ -120,9 +127,13 @@ Deno.serve(async request => {
     },
   })
   if (error) {
+    // Keep credentials and submitted guest data out of logs; the SQL error
+    // details are enough to diagnose stale/invalid form questions.
+    console.error('Public RSVP submission failed:', { code: error.code, message: error.message })
     if (uploadedPath) await adminClient.storage.from('guest-documents').remove([uploadedPath])
     const invalidLink = error.message.includes('invalid or has been turned off')
-    return response({ error: invalidLink ? 'This RSVP link is invalid or has been turned off.' : 'Could not save your RSVP. Please check your answers and try again.' }, invalidLink ? 404 : 400)
+    const answerValidationError = error.code === '22023'
+    return response({ error: invalidLink ? 'This RSVP link is invalid or has been turned off.' : answerValidationError ? error.message : 'Could not save your RSVP. Please check your answers and try again.' }, invalidLink ? 404 : 400)
   }
   const workspaceName = data?.[0]?.workspace_name
   if (!workspaceName) return response({ error: 'Could not save your RSVP. Please try again.' }, 500)

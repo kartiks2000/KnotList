@@ -12,6 +12,7 @@ function countWords(value: string) {
 export function PublicRsvpPage({ token }: { token: string }) {
   const [workspaceName, setWorkspaceName] = useState('')
   const [settings, setSettings] = useState<PublicRsvpSettings | null>(null)
+  const [personalized, setPersonalized] = useState(false)
   const [name, setName] = useState('')
   const [guestCount, setGuestCount] = useState('1')
   const [rsvp, setRsvp] = useState<'confirmed' | 'declined' | ''>('')
@@ -43,6 +44,7 @@ export function PublicRsvpPage({ token }: { token: string }) {
       else {
         setWorkspaceName(data.workspaceName)
         setSettings(normalizePublicRsvpSettings(data.settings))
+        setPersonalized(data.isPersonalized === true)
       }
       setLoading(false)
     }
@@ -93,7 +95,7 @@ export function PublicRsvpPage({ token }: { token: string }) {
         : !settings ? <div className="public-rsvp-error" role="alert">{error || 'Could not load the RSVP form settings. Please contact the planner.'}</div>
           : submitted ? <div className="public-rsvp-success" role="status"><span><Check size={21} /></span><h2>Thank you for replying</h2><p>Your RSVP has been sent to {workspaceName}.</p></div>
             : <form className="public-rsvp-form" onSubmit={submit}>
-              <label className="public-rsvp-label">Your name<input autoComplete="name" value={name} onChange={event => setName(event.target.value)} maxLength={140} placeholder="Enter your name" required /></label>
+              <label className="public-rsvp-label">Your name<input autoComplete="name" value={name} onChange={event => setName(event.target.value)} maxLength={140} placeholder="Enter your name" required />{personalized && <small>This name is saved as an RSVP answer. The guest name in the planner’s list stays unchanged.</small>}</label>
               {settings?.askGuestCount && <label className="public-rsvp-label">Number of people<div className="public-rsvp-input-icon"><Users size={17} /><input type="number" min="1" max="500" step="1" value={guestCount} onChange={event => setGuestCount(event.target.value)} required /></div></label>}
               <fieldset className="public-rsvp-options"><legend>Will you be joining us?</legend><div className="public-rsvp-choice-row"><label className={rsvp === 'confirmed' ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name="rsvp" value="confirmed" checked={rsvp === 'confirmed'} onChange={() => setRsvp('confirmed')} required /><span>{settings?.yesLabel || 'Yes'}</span></label><label className={rsvp === 'declined' ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name="rsvp" value="declined" checked={rsvp === 'declined'} onChange={() => { setRsvp('declined'); setCheckinDate(''); setCheckoutDate(''); setIdentificationDocument(null) }} /><span>{settings?.noLabel || 'No'}</span></label></div></fieldset>
               {settings?.askCheckinDate && rsvp === 'confirmed' && <fieldset className="public-rsvp-options"><legend><CalendarDays size={15} /> Check-in date</legend><div className="public-rsvp-choice-row">{settings.checkinOptions.map(option => <label key={option.date} className={checkinDate === option.date ? 'public-rsvp-choice selected' : 'public-rsvp-choice'}><input type="radio" name="checkin" value={option.date} checked={checkinDate === option.date} onChange={() => setCheckinDate(option.date)} required /><span>{option.label || dateOptionLabel(option.date)}</span></label>)}</div></fieldset>}
