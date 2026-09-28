@@ -242,7 +242,7 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
   }
 
   return <section className="whatsapp-page">
-    <header className="guest-heading-row whatsapp-heading"><div><span className="guest-eyebrow">GUEST INVITES</span><h1>Invite</h1><p>Save a message and optional media to reuse when inviting guests.</p></div></header>
+    <header className="guest-heading-row whatsapp-heading"><div><h1>Invite</h1></div></header>
     <div className="whatsapp-editor">
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading invitation…</div> : <>
         <label className="form-field whatsapp-message-field">Invitation message<textarea rows={5} maxLength={3000} value={template} onChange={event => setTemplate(event.target.value)} placeholder="Write your invitation…" /></label>

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Copy, Edit3, FileDown, FileSpreadsheet, FileText, Gift, Heart, ListChecks, LoaderCircle, Mail, MessageCircle, Phone, Plus, Search, Settings2, Table2, Trash2, Upload, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Copy, Edit3, FileDown, FileSpreadsheet, FileText, Gift, Heart, ListChecks, LoaderCircle, LogOut, Mail, MessageCircle, Phone, Plus, Search, Settings2, Table2, Trash2, Upload, UserPlus, UserRound, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { normalizePublicRsvpSettings } from '../lib/publicRsvp'
 import { TasksView } from './TasksView'
@@ -99,16 +99,18 @@ function fileSlug(value: string) {
   return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'planning-space'
 }
 
-async function saveExcelExport(filename: string, tables: ExportTable[]) {
-  const XLSX = await import('xlsx')
-  const workbook = XLSX.utils.book_new()
-  for (const table of tables) {
-    const worksheet = XLSX.utils.aoa_to_sheet([table.headers, ...table.rows])
-    worksheet['!cols'] = table.headers.map((header, index) => ({ wch: Math.min(34, Math.max(14, header.length + (index === 0 ? 8 : 2))) }))
-    if (worksheet['!ref']) worksheet['!autofilter'] = { ref: worksheet['!ref'] }
-    XLSX.utils.book_append_sheet(workbook, worksheet, table.title.slice(0, 31))
+function saveCsvExport(filename: string, table: ExportTable) {
+  const escapeCell = (value: string | number) => {
+    const text = String(value ?? '')
+    return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
   }
-  XLSX.writeFile(workbook, filename, { compression: true })
+  const content = [table.headers, ...table.rows].map(row => row.map(escapeCell).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 async function savePdfExport(filename: string, reportTitle: string, tables: ExportTable[]) {
@@ -139,8 +141,16 @@ async function savePdfExport(filename: string, reportTitle: string, tables: Expo
   pdf.save(filename)
 }
 
-function ExportActions({ onExcel, onPdf, disabled = false }: { onExcel: () => void; onPdf: () => void; disabled?: boolean }) {
-  return <div className="export-actions" role="group" aria-label="Export data"><button className="export-button" onClick={onExcel} disabled={disabled} title="Download Excel workbook"><FileSpreadsheet size={15} /><span>Excel</span></button><button className="export-button" onClick={onPdf} disabled={disabled} title="Download PDF report"><FileDown size={15} /><span>PDF</span></button></div>
+function ExportActions({ onCsv, onPdf, disabled = false }: { onCsv: () => void; onPdf: () => void; disabled?: boolean }) {
+  return <details className="toolbar-dropdown export-actions"><summary className="export-button" aria-label="Export"><FileDown size={15} /><span>Export</span><ChevronDown size={13} /></summary><div className="toolbar-dropdown-menu" role="menu"><button type="button" role="menuitem" onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); onCsv() }} disabled={disabled}><FileSpreadsheet size={15} />CSV</button><button type="button" role="menuitem" onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); onPdf() }} disabled={disabled}><FileDown size={15} />PDF</button></div></details>
+}
+
+function ViewActions({ value, onChange, label }: { value: ViewMode; onChange: (value: ViewMode) => void; label: string }) {
+  return <details className="toolbar-dropdown view-actions"><summary className="export-button" aria-label={`${label} view`}><Table2 size={15} /><span>View</span><ChevronDown size={13} /></summary><div className="toolbar-dropdown-menu" role="menu">{(['cards', 'spreadsheet'] as const).map(option => <button key={option} type="button" role="menuitemradio" aria-checked={value === option} className={value === option ? 'toolbar-option-selected' : ''} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); onChange(option) }}>{option === 'cards' ? 'Cards' : 'Spreadsheet'}</button>)}</div></details>
+}
+
+function GiftTypeActions({ value, onChange }: { value: 'welcome' | 'final'; onChange: (value: 'welcome' | 'final') => void }) {
+  return <details className="toolbar-dropdown gift-type-actions"><summary className="export-button" aria-label="Gift type"><Gift size={15} /><span>{value === 'welcome' ? 'Welcome gift' : 'Final gift'}</span><ChevronDown size={13} /></summary><div className="toolbar-dropdown-menu" role="menu">{(['welcome', 'final'] as const).map(option => <button key={option} type="button" role="menuitemradio" aria-checked={value === option} className={value === option ? 'toolbar-option-selected' : ''} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); onChange(option) }}>{option === 'welcome' ? 'Welcome gift' : 'Final gift'}</button>)}</div></details>
 }
 
 export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackToSpaces, accountEmail, onSignOut }: {
@@ -151,6 +161,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   accountEmail: string
   onSignOut: () => void
 }) {
+  const [mobileAccountOpen, setMobileAccountOpen] = useState(false)
+  const mobileAccountMenuRef = useRef<HTMLDivElement>(null)
   const [guests, setGuests] = useState<GuestGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -255,6 +267,22 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     }
     setLoading(false)
   }
+
+  useEffect(() => {
+    if (!mobileAccountOpen) return
+    const closeWhenOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !mobileAccountMenuRef.current?.contains(event.target)) setMobileAccountOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileAccountOpen(false)
+    }
+    document.addEventListener('pointerdown', closeWhenOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeWhenOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [mobileAccountOpen])
 
   useEffect(() => {
     setEditorOpen(false)
@@ -405,7 +433,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     window.setTimeout(() => setToast(''), 3500)
   }
 
-  async function exportGuests(format: 'excel' | 'pdf') {
+  async function exportGuests(format: 'csv' | 'pdf') {
     const customFields = new Map<string, string>()
     if (supabase) {
       const { data: formSettings } = await supabase.rpc('get_workspace_public_rsvp_settings', { requested_workspace_id: workspaceId })
@@ -424,10 +452,10 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     const table = { title: 'Guest details', headers, rows }
     const name = `knotlist-${fileSlug(workspaceName)}-guests`
     try {
-      if (format === 'excel') await saveExcelExport(`${name}.xlsx`, [table])
+      if (format === 'csv') saveCsvExport(`${name}.csv`, table)
       else await savePdfExport(`${name}.pdf`, `${workspaceName} · Guests`, [table])
     } catch {
-      setToast(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export. Please try again.`)
+      setToast(`Could not create the ${format.toUpperCase()} export. Please try again.`)
       window.setTimeout(() => setToast(''), 3500)
     }
   }
@@ -451,10 +479,11 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   return (
     <div className="guest-app">
       <header className="guest-topbar">
+        <button type="button" className="header-spaces-button" onClick={onBackToSpaces} aria-label="Back to spaces" title="Back to spaces"><ArrowLeft size={18} /></button>
         <a className="brand guest-brand" href="#home"><span className="brand-mark"><Heart size={17} strokeWidth={1.8} /></span><span>knotlist</span></a>
         <label className="workspace-picker-label" htmlFor="workspace-select">Planning space</label>
         <div className="workspace-picker-wrap"><select id="workspace-select" className="workspace-picker" value={workspaceId} onChange={event => onWorkspaceChange(event.target.value)} aria-label="Planning space">{workspaces.map(workspace => <option value={workspace.id} key={workspace.id}>{workspace.name}</option>)}</select>{workspaces.length > 1 && <ChevronDown size={15} />}</div>
-        <div className="account-area"><WorkspaceNotifications workspaceId={workspaceId} />{canManagePeople && <button className="manage-people-button" onClick={() => setPeopleOpen(true)} aria-label="Manage people in this planning space" title="Manage people"><UserPlus size={16} /><span>People</span></button>}<span>{accountEmail}</span><button className="account-signout" onClick={onSignOut}>Sign out</button></div>
+        <div className="account-area"><WorkspaceNotifications workspaceId={workspaceId} />{canManagePeople && <button className="manage-people-button" onClick={() => setPeopleOpen(true)} aria-label="Manage people in this planning space" title="Manage people"><UserPlus size={16} /><span>People</span></button>}<span className="desktop-account-email">{accountEmail}</span><button className="account-signout desktop-account-signout" onClick={onSignOut}>Sign out</button><div className="mobile-account-menu" ref={mobileAccountMenuRef}><button type="button" className="mobile-account-button" aria-label="Account menu" aria-expanded={mobileAccountOpen} onClick={() => setMobileAccountOpen(value => !value)}><UserRound size={19} /></button>{mobileAccountOpen && <div className="mobile-account-popover"><div className="mobile-account-email">{accountEmail}</div>{canManageGuests && <button type="button" onClick={() => { setMobileAccountOpen(false); selectSection('settings') }}><Settings2 size={16} /><span>Settings</span></button>}{canManagePeople && <button type="button" onClick={() => { setMobileAccountOpen(false); setPeopleOpen(true) }}><UserPlus size={16} /><span>Add users</span></button>}<button type="button" className="mobile-account-signout" onClick={onSignOut}><LogOut size={16} /><span>Sign out</span></button></div>}</div></div>
       </header>
 
       <div className="planning-workspace-layout">
@@ -474,14 +503,14 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
 
       <main className={`guest-main ${section === 'guests' && viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''} ${section === 'whatsapp' ? 'whatsapp-main' : ''} ${section === 'settings' ? 'settings-main' : ''}`}>
         {section === 'guests' && canAccessGuests ? <>
-        <div className="guest-heading-row"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h1>Guests</h1><p>Keep track of guests, replies, and stays.</p></div><button className="primary-button add-family-button" onClick={() => showEditor()}><Plus size={18} /> Add guest</button></div>
+        <div className="guest-heading-row"><div><h1>Guests</h1></div><div className="guest-heading-actions"><div className="data-toolbar-controls">{!loading && !loadError && guests.length > 0 && <><ViewActions value={viewMode} onChange={setViewMode} label="Guest list" /><ExportActions onCsv={() => void exportGuests('csv')} onPdf={() => void exportGuests('pdf')} disabled={filteredGuests.length === 0} /></>}</div><button className="primary-button add-family-button" onClick={() => showEditor()}><Plus size={18} /> Add guest</button></div></div>
         <section className="guest-summary" aria-label="Guest list summary"><div><Users size={16} /><strong>{guests.length}</strong><span>{guests.length === 1 ? 'guest' : 'guests'}</span></div><span className="summary-divider" /><div><strong>{guestTotal}</strong><span>guests</span></div><span className="summary-divider" /><div><strong>{inviteTotal}</strong><span>to invite</span></div><span className="summary-divider" /><div><strong>{waitingTotal}</strong><span>awaiting RSVP</span></div><span className="summary-divider" /><div><strong>{assignedRoomTotal}</strong><span>rooms assigned</span></div></section>
 
         <div className="guest-toolbar"><label className="guest-search"><Search size={18} /><input aria-label="Search guests or contacts" placeholder="Search guests or contacts" value={search} onChange={event => setSearch(event.target.value)} /></label><button className="mobile-add-button" onClick={() => showEditor()} aria-label="Add guest"><Plus size={18} /><span>Add</span></button></div>
 
         <nav className="guest-filters" aria-label="Filter guest list">{(Object.keys(filterLabels) as Filter[]).map(key => <button key={key} className={`filter-chip ${filter === key ? 'filter-active' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>{filterLabels[key]}{key === 'invite' && inviteTotal > 0 && <span className="filter-count">{inviteTotal}</span>}{key === 'rsvp' && waitingTotal > 0 && <span className="filter-count">{waitingTotal}</span>}{key === 'confirmed' && confirmedTotal > 0 && <span className="filter-count">{confirmedTotal}</span>}{key === 'self_rsvp' && guests.filter(guest => guest.self_rsvp).length > 0 && <span className="filter-count">{guests.filter(guest => guest.self_rsvp).length}</span>}</button>)}</nav>
 
-        {!loading && !loadError && guests.length > 0 && <div className="guest-view-row"><span>{filteredGuests.length} {filteredGuests.length === 1 ? 'guest' : 'guests'}</span><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportGuests('excel')} onPdf={() => void exportGuests('pdf')} disabled={filteredGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Guest list view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => setViewMode('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => setViewMode('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
+        {!loading && !loadError && guests.length > 0 && <div className="guest-view-row"><span>{filteredGuests.length} {filteredGuests.length === 1 ? 'guest' : 'guests'}</span></div>}
 
         <div className="guest-data-scroll">
           {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading guests…</div> : loadError ? <div className="guest-state error-state"><h2>Couldn’t load the guest list</h2><p>{loadError.includes('schema cache') || loadError.includes('guest_groups') ? 'The guest-list database setup hasn’t been applied yet. Ask your project admin to apply the guest-list migration.' : 'Check your connection or workspace access, then try again.'}</p><button className="secondary-button" onClick={() => void loadGuests()}>Try again</button></div> : guests.length === 0 ? <div className="guest-state"><div className="empty-mark"><Users size={23} /></div><h2>Start with one guest</h2><p>Add a guest you’re inviting. You can fill in invitation, RSVP, and stay details now or later.</p><button className="primary-button" onClick={() => showEditor()}><Plus size={17} /> Add your first guest</button></div> : filteredGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try a different search or filter.</p><button className="text-button" onClick={() => { setSearch(''); setFilter('all') }}>Clear search and filters</button></div> : viewMode === 'spreadsheet' ? <GuestSpreadsheet guests={filteredGuests} canDelete={canManageGuests} deletingGuestId={deletingGuestId} onDelete={guest => void deleteGuest(guest)} onOpen={guest => setDetailsGuest(guest)} onEdit={guest => showEditor(guest)} /> : <section className="guest-list" aria-label="Guests you are inviting">{filteredGuests.map(guest => <GuestCard key={guest.id} guest={guest} workspaceId={workspaceId} canDelete={canManageGuests} deleting={deletingGuestId === guest.id} onDelete={() => void deleteGuest(guest)} onOpen={() => setDetailsGuest(guest)} onEdit={() => showEditor(guest)} />)}</section>}
@@ -489,7 +518,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
         </div>
         </> : section === 'lodging' && canAccessLodging ? <LodgingView guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} viewMode={lodgingViewMode} onViewModeChange={setLodgingViewMode} canEdit={canManageLodging} savingStatuses={savingLodgingStatuses} onStatusChange={updateLodgingStatus} onRetry={() => void loadGuests()} onEdit={setLodgingEditingGuest} onViewDocuments={setLodgingDocumentsGuest} /> : section === 'gifts' && canAccessGifts ? <GiftTracker guests={guests} workspaceName={workspaceName} loading={loading} loadError={loadError} canEdit={canManageGifts} savingGiftFields={savingGiftFields} onRetry={() => void loadGuests()} onToggle={updateGiftField} /> : section === 'tasks' && canAccessTasks ? <TasksView workspaceId={workspaceId} canManage={canManageTasks} /> : section === 'whatsapp' && canManageGuests ? <WhatsAppInvites workspaceId={workspaceId} workspaceName={workspaceName} guests={guests} onMarkInvitationSent={markInvitationSentFromShare} /> : section === 'settings' && canManageGuests ? <RsvpSettingsModule workspaceId={workspaceId} workspaceName={workspaceName} /> : <div className="guest-loading"><LoaderCircle className="spin" size={22} />{loading ? 'Loading workspace access…' : loadError || 'No sections are available for your access level.'}</div>}
       </main>
-      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => selectSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => selectSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => selectSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => selectSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}{canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => selectSection('whatsapp')}><MessageCircle size={18} /><span>Invite</span></button>}{canManageGuests && <button className={section === 'settings' ? 'section-selected' : ''} aria-current={section === 'settings' ? 'page' : undefined} onClick={() => selectSection('settings')}><Settings2 size={18} /><span>Settings</span></button>}<button className="mobile-spaces-nav" onClick={onBackToSpaces}><ArrowLeft size={18} /><span>Spaces</span></button></nav>
+      <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => selectSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => selectSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => selectSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => selectSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}{canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => selectSection('whatsapp')}><MessageCircle size={18} /><span>Invite</span></button>}</nav>
       </div>
 
       {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={(guest, documentStatus) => notifySaved(guest, Boolean(editingGuest), documentStatus)} />}
@@ -541,35 +570,31 @@ function GiftTracker({ guests, workspaceName, loading, loadError, canEdit, savin
     })
   }, [eligibleGuests, search, giftFilter, field])
 
-  async function exportGift(format: 'excel' | 'pdf') {
+  async function exportGift(format: 'csv' | 'pdf') {
     const headers = ['Guest name', `${title} given`]
     const rows = visibleGuests.map(guest => [guest.family_name, guest[field] === true ? 'Yes' : 'No'])
     const table = { title, headers, rows }
     const name = `knotlist-${fileSlug(workspaceName)}-${fileSlug(title)}`
     setExportError('')
     try {
-      if (format === 'excel') await saveExcelExport(`${name}.xlsx`, [table])
+      if (format === 'csv') saveCsvExport(`${name}.csv`, table)
       else await savePdfExport(`${name}.pdf`, `${workspaceName} · ${title}`, [table])
     } catch {
-      setExportError(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export. Please try again.`)
+      setExportError(`Could not create the ${format.toUpperCase()} export. Please try again.`)
     }
   }
 
   return <>
-    <div className="gift-heading"><div><span className="guest-eyebrow">GIFT TRACKING</span><h1>Gifts</h1><p>Mark each gift as given with one tap.</p></div></div>
-    <nav className="gift-module-tabs" role="tablist" aria-label="Gift modules">
-      <button role="tab" aria-selected={module === 'welcome'} className={module === 'welcome' ? 'gift-module-selected' : ''} onClick={() => { setModule('welcome'); setGiftFilter('all') }}><Gift size={16} />Welcome gift</button>
-      <button role="tab" aria-selected={module === 'final'} className={module === 'final' ? 'gift-module-selected' : ''} onClick={() => { setModule('final'); setGiftFilter('all') }}><Gift size={16} />Final gift</button>
-    </nav>
+    <div className="gift-heading"><h1>Gifts</h1><div className="gift-heading-actions"><GiftTypeActions value={module} onChange={value => { setModule(value); setGiftFilter('all') }} /><ExportActions onCsv={() => void exportGift('csv')} onPdf={() => void exportGift('pdf')} disabled={visibleGuests.length === 0} /></div></div>
     <section className="gift-module-panel" role="tabpanel">
-      <div className="gift-module-summary"><div><h2>{title}</h2><p>Tick when received. Guests with declined RSVPs aren’t listed.</p></div><span>{givenCount} of {eligibleGuests.length} given</span></div>
+      <div className="gift-module-summary"><div><h2>{title}</h2></div><span>{givenCount} of {eligibleGuests.length} given</span></div>
       <label className="guest-search gift-search"><Search size={17} /><input aria-label={`Search guests for ${title.toLowerCase()}`} placeholder="Search guests" value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}</label>
       <nav className="gift-filters" aria-label={`Filter ${title.toLowerCase()} status`}>
         <button className={`filter-chip ${giftFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'all'} onClick={() => setGiftFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button>
         <button className={`filter-chip ${giftFilter === 'given' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'given'} onClick={() => setGiftFilter('given')}>Given <span className="filter-count">{givenCount}</span></button>
         <button className={`filter-chip ${giftFilter === 'not_given' ? 'filter-active' : ''}`} aria-pressed={giftFilter === 'not_given'} onClick={() => setGiftFilter('not_given')}>Not given <span className="filter-count">{notGivenCount}</span></button>
       </nav>
-      <div className="gift-list-toolbar"><span className="gift-visible-count">Showing {visibleGuests.length} {visibleGuests.length === 1 ? 'guest' : 'guests'}</span><ExportActions onExcel={() => void exportGift('excel')} onPdf={() => void exportGift('pdf')} disabled={visibleGuests.length === 0} /></div>
+      <div className="gift-list-toolbar"><span className="gift-visible-count">Showing {visibleGuests.length} {visibleGuests.length === 1 ? 'guest' : 'guests'}</span></div>
       {exportError && <p className="export-error" role="alert">{exportError}</p>}
       <div className="gift-table-scroll">
         {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} />Loading gifts…</div>
@@ -622,24 +647,24 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
     return matchesFilter && matchesSearch
   })
 
-  async function exportLodging(format: 'excel' | 'pdf') {
+  async function exportLodging(format: 'csv' | 'pdf') {
     const headers = ['Guest name', 'Number of guests', 'Total rooms', 'Allotted room numbers', 'Checked in', 'Checked out']
     const rows = visibleGuests.map(guest => [guest.family_name, guest.guest_count, guest.room_count ?? '', guest.assigned_room_numbers.filter(room => room.trim()).join(', '), guest.checked_in ? 'Yes' : 'No', guest.checked_out ? 'Yes' : 'No'])
     const table = { title: 'Lodging assignments', headers, rows }
     const name = `knotlist-${fileSlug(workspaceName)}-lodging`
     setExportError('')
     try {
-      if (format === 'excel') await saveExcelExport(`${name}.xlsx`, [table])
+      if (format === 'csv') saveCsvExport(`${name}.csv`, table)
       else await savePdfExport(`${name}.pdf`, `${workspaceName} · Lodging`, [table])
     } catch {
-      setExportError(`Could not create the ${format === 'excel' ? 'Excel' : 'PDF'} export. Please try again.`)
+      setExportError(`Could not create the ${format.toUpperCase()} export. Please try again.`)
     }
   }
 
   return <>
-    <div className="lodging-heading"><div><span className="guest-eyebrow">ROOM OVERVIEW</span><h1>Lodging</h1><p>Guests with declined RSVPs aren’t listed here.</p></div><div className="lodging-summary"><strong>{guestTotal}</strong><span>guests</span><i /><strong>{roomTotal}</strong><span>total rooms</span></div></div>
+    <div className="lodging-heading"><div className="lodging-title-row"><h1>Lodging</h1>{eligibleGuests.length > 0 && <div className="data-toolbar-controls"><ViewActions value={viewMode} onChange={onViewModeChange} label="Lodging" /><ExportActions onCsv={() => void exportLodging('csv')} onPdf={() => void exportLodging('pdf')} disabled={visibleGuests.length === 0} /></div>}</div><div className="lodging-summary"><strong>{guestTotal}</strong><span>guests</span><i /><strong>{roomTotal}</strong><span>total rooms</span></div></div>
     {!loading && !loadError && eligibleGuests.length > 0 && <label className="lodging-search"><Search size={17} /><span className="sr-only">Search guests or room numbers</span><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search guests or room numbers" /><button type="button" onClick={() => setSearch('')} aria-label="Clear lodging search" title="Clear search" disabled={!search}><X size={15} /></button></label>}
-    {!loading && !loadError && eligibleGuests.length > 0 && <div className="lodging-controls"><div className="lodging-filters" role="group" aria-label="Filter lodging guests"><button className={`filter-chip ${lodgingFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'all'} onClick={() => setLodgingFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button><button className={`filter-chip ${lodgingFilter === 'allocated' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'allocated'} onClick={() => setLodgingFilter('allocated')}>Allocated <span className="filter-count">{allocatedGuests}</span></button><button className={`filter-chip ${lodgingFilter === 'unallocated' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'unallocated'} onClick={() => setLodgingFilter('unallocated')}>Unallocated <span className="filter-count">{unallocatedGuests}</span></button><button className={`filter-chip ${lodgingFilter === 'checked-in' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'checked-in'} onClick={() => setLodgingFilter('checked-in')}>Checked in <span className="filter-count">{checkedInGuests}</span></button><button className={`filter-chip ${lodgingFilter === 'checked-out' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'checked-out'} onClick={() => setLodgingFilter('checked-out')}>Checked out <span className="filter-count">{checkedOutGuests}</span></button></div><div className="data-toolbar-controls"><ExportActions onExcel={() => void exportLodging('excel')} onPdf={() => void exportLodging('pdf')} disabled={visibleGuests.length === 0} /><div className="guest-view-switch" role="group" aria-label="Lodging view"><button aria-pressed={viewMode === 'cards'} className={viewMode === 'cards' ? 'view-selected' : ''} onClick={() => onViewModeChange('cards')}>Cards</button><button aria-pressed={viewMode === 'spreadsheet'} className={viewMode === 'spreadsheet' ? 'view-selected' : ''} onClick={() => onViewModeChange('spreadsheet')}><Table2 size={15} />Spreadsheet</button></div></div></div>}
+    {!loading && !loadError && eligibleGuests.length > 0 && <div className="lodging-controls"><div className="lodging-filters" role="group" aria-label="Filter lodging guests"><button className={`filter-chip ${lodgingFilter === 'all' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'all'} onClick={() => setLodgingFilter('all')}>All <span className="filter-count">{eligibleGuests.length}</span></button><button className={`filter-chip ${lodgingFilter === 'allocated' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'allocated'} onClick={() => setLodgingFilter('allocated')}>Allocated <span className="filter-count">{allocatedGuests}</span></button><button className={`filter-chip ${lodgingFilter === 'unallocated' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'unallocated'} onClick={() => setLodgingFilter('unallocated')}>Unallocated <span className="filter-count">{unallocatedGuests}</span></button><button className={`filter-chip ${lodgingFilter === 'checked-in' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'checked-in'} onClick={() => setLodgingFilter('checked-in')}>Checked in <span className="filter-count">{checkedInGuests}</span></button><button className={`filter-chip ${lodgingFilter === 'checked-out' ? 'filter-active' : ''}`} aria-pressed={lodgingFilter === 'checked-out'} onClick={() => setLodgingFilter('checked-out')}>Checked out <span className="filter-count">{checkedOutGuests}</span></button></div></div>}
     {exportError && <p className="export-error" role="alert">{exportError}</p>}
     <div className={`lodging-data-scroll ${viewMode === 'cards' ? 'lodging-cards-mode' : ''}`}>
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading lodging…</div>
@@ -649,7 +674,6 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
             : viewMode === 'spreadsheet' ? <><div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Guest</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th><th>Checked in</th><th>Checked out</th><th className="lodging-action-heading"><span className="sr-only">Guest actions</span></th></tr></thead><tbody>{visibleGuests.map(guest => <tr key={guest.id}><th scope="row"><button type="button" className="lodging-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button></th><td>{guest.guest_count}</td><td>{guest.room_count ?? <span className="sheet-muted">Not set</span>}</td><td>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || <span className="sheet-muted">Not allotted</span>}</td><td><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_in} disabled={!canEdit || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked in`} onChange={event => onStatusChange(guest, event.target.checked, event.target.checked ? guest.checked_out : false)} /><span>{guest.checked_in ? 'Yes' : ''}</span></label></td><td><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_out} disabled={!canEdit || !guest.checked_in || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked out`} onChange={event => onStatusChange(guest, guest.checked_in, event.target.checked)} /><span>{guest.checked_out ? 'Yes' : ''}</span></label></td><td className="lodging-action"><span className="lodging-row-actions"><button className="sheet-edit-button" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={16} /></button>{canEdit && <button className="sheet-edit-button" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={16} /></button>}</span></td></tr>)}</tbody></table></div><p className="spreadsheet-hint lodging-spreadsheet-hint">Scroll sideways to see more columns.</p></>
               : <section className="lodging-card-list" aria-label="Lodging cards">{visibleGuests.map(guest => <article className="lodging-card" key={guest.id}><div className="lodging-card-heading"><div><button type="button" className="lodging-guest-name lodging-card-guest-name" onClick={() => onViewDocuments(guest)} aria-label={`View documents for ${guest.family_name}`}>{guest.family_name}</button><span>{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span></div><div className="lodging-card-actions"><button className="lodging-card-edit" aria-label={`View documents for ${guest.family_name}`} title="View documents" onClick={() => onViewDocuments(guest)}><FileText size={17} /></button>{canEdit && <button className="lodging-card-edit" aria-label={`Edit lodging for ${guest.family_name}`} title="Edit lodging" onClick={() => onEdit(guest)}><Edit3 size={17} /></button>}</div></div><div className="lodging-card-roomline"><span><small>Rooms</small><strong>{guest.room_count ?? '—'}</strong></span><span className="lodging-card-roomnumbers"><small>Room numbers</small><strong>{guest.assigned_room_numbers?.filter(room => room.trim()).join(', ') || 'Not allotted'}</strong></span></div><div className="lodging-card-statuses"><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_in} disabled={!canEdit || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked in`} onChange={event => onStatusChange(guest, event.target.checked, event.target.checked ? guest.checked_out : false)} /><span>Checked in{guest.checked_in ? ' · Yes' : ''}</span></label><label className="lodging-status-checkbox"><input type="checkbox" checked={guest.checked_out} disabled={!canEdit || !guest.checked_in || savingStatuses.has(guest.id)} aria-label={`Mark ${guest.family_name} checked out`} onChange={event => onStatusChange(guest, guest.checked_in, event.target.checked)} /><span>Checked out{guest.checked_out ? ' · Yes' : ''}</span></label></div></article>)}</section>}
     </div>
-    {!loading && !loadError && eligibleGuests.length > 0 && <footer className="guest-footer lodging-footer">Your lodging details are shared with people who have access to this planning space.</footer>}
   </>
 }
 
