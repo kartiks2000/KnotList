@@ -154,7 +154,7 @@ export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId
   if (loading) return <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading settings…</div>
 
   return <section className="rsvp-settings-page">
-    <header className="rsvp-settings-heading"><div><span className="guest-eyebrow">PLANNING SPACE SETTINGS</span><h1>RSVP form</h1><p>Choose what guests are asked and manage the links they use to reply.</p></div><button type="button" className="secondary-button rsvp-preview-toggle" onClick={() => setPreviewOpen(value => !value)}><Eye size={15} />{previewOpen ? 'Hide preview' : 'Preview form'}</button></header>
+    <header className="rsvp-settings-heading"><div><h1>RSVP form</h1></div><button type="button" className="secondary-button rsvp-preview-toggle" onClick={() => setPreviewOpen(value => !value)}><Eye size={15} />{previewOpen ? 'Hide preview' : 'Preview form'}</button></header>
 
     <div className="rsvp-settings-layout">
       <form className="rsvp-settings-form" onSubmit={saveSettings}>

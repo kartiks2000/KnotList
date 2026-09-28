@@ -49,7 +49,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    setMobileNav(document.querySelector<HTMLElement>('.mobile-workspace-nav'))
+    setMobileNav(document.querySelector<HTMLElement>('.account-area'))
   }, [])
 
   useEffect(() => {
@@ -236,7 +236,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
   const toggleNotifications = () => { setOpen(value => !value); setMessage('') }
   const bellLabel = `Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`
   const mobileBell = mobileNav ? createPortal(<button ref={mobileBellRef} type="button" className="notification-bell mobile-notification-bell" aria-label={bellLabel} aria-expanded={open} onClick={toggleNotifications}>
-    <span className="mobile-notification-icon"><Bell size={18} />{unreadCount > 0 && <span className="notification-count">{unreadCount > 9 ? '9+' : unreadCount}</span>}</span><span>Alerts</span>
+    <span className="mobile-notification-icon"><Bell size={18} />{unreadCount > 0 && <span className="notification-count">{unreadCount > 9 ? '9+' : unreadCount}</span>}</span>
   </button>, mobileNav) : null
 
   return <>{mobileBell}<div className="workspace-notifications" ref={containerRef}>
