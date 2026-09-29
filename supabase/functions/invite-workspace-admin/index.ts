@@ -61,14 +61,14 @@ Deno.serve(async request => {
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: 'Enter a valid email address.' }, 400)
   if (!roleKey) return response({ error: 'Choose a supported access level.' }, 400)
 
-  const [globalUserPermission, lodgingInvitePermission] = await Promise.all([
-    callerClient.rpc('has_permission', { requested_permission: 'users.manage', requested_workspace_id: null }),
+  const [workspaceUserPermission, lodgingInvitePermission] = await Promise.all([
+    callerClient.rpc('has_permission', { requested_permission: 'users.manage', requested_workspace_id: workspaceId }),
     callerClient.rpc('has_permission', { requested_permission: 'lodging.members.manage', requested_workspace_id: workspaceId }),
   ])
-  if (globalUserPermission.error || lodgingInvitePermission.error) return response({ error: 'Could not verify your workspace permissions.' }, 500)
-  const canInviteAdmins = globalUserPermission.data === true
+  if (workspaceUserPermission.error || lodgingInvitePermission.error) return response({ error: 'Could not verify your workspace permissions.' }, 500)
+  const canInviteAdmins = workspaceUserPermission.data === true
   const canInviteLodging = canInviteAdmins || lodgingInvitePermission.data === true
-  if (roleKey === 'admin' && !canInviteAdmins) return response({ error: 'Only a super admin can invite an Admin.' }, 403)
+  if (roleKey === 'admin' && !canInviteAdmins) return response({ error: 'Only an Admin of this planning space can invite another Admin.' }, 403)
   if (roleKey === 'lodging_manager' && !canInviteLodging) return response({ error: 'You do not have permission to invite Lodging users to this planning space.' }, 403)
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
