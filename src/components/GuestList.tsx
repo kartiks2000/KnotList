@@ -183,6 +183,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const [toast, setToast] = useState('')
   const [canManagePeople, setCanManagePeople] = useState(false)
   const [canInviteAdmins, setCanInviteAdmins] = useState(false)
+  const [canRemoveAdmins, setCanRemoveAdmins] = useState(false)
   const [canInviteLodging, setCanInviteLodging] = useState(false)
   const [canAccessGuests, setCanAccessGuests] = useState(false)
   const [canAccessLodging, setCanAccessLodging] = useState(false)
@@ -326,16 +327,20 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     let alive = true
     setCanManagePeople(false)
     setCanInviteAdmins(false)
+    setCanRemoveAdmins(false)
     setCanInviteLodging(false)
     if (!supabase) return () => { alive = false }
     void Promise.all([
+      supabase.rpc('has_permission', { requested_permission: 'users.manage', requested_workspace_id: workspaceId }),
       supabase.rpc('has_permission', { requested_permission: 'users.manage', requested_workspace_id: null }),
       supabase.rpc('has_permission', { requested_permission: 'lodging.members.manage', requested_workspace_id: workspaceId }),
-    ]).then(([adminResult, lodgingResult]) => {
+    ]).then(([adminResult, globalAdminResult, lodgingResult]) => {
       if (!alive) return
       const adminAllowed = !adminResult.error && adminResult.data === true
+      const globalAdminAllowed = !globalAdminResult.error && globalAdminResult.data === true
       const lodgingAllowed = !lodgingResult.error && lodgingResult.data === true
       setCanInviteAdmins(adminAllowed)
+      setCanRemoveAdmins(globalAdminAllowed)
       setCanInviteLodging(adminAllowed || lodgingAllowed)
       setCanManagePeople(adminAllowed || lodgingAllowed)
     })
@@ -545,7 +550,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => setLodgingEditingGuest(null)} onSaved={guest => notifySaved(guest, true)} />}
       {detailsGuest && <GuestDetails workspaceId={workspaceId} guest={detailsGuest} canDelete={canManageGuests} deleting={deletingGuestId === detailsGuest.id} onDelete={() => void deleteGuest(detailsGuest)} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
       {lodgingDocumentsGuest && <LodgingDocumentsDialog workspaceId={workspaceId} guest={lodgingDocumentsGuest} onClose={() => setLodgingDocumentsGuest(null)} />}
-      {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} canInviteAdmins={canInviteAdmins} canInviteLodging={canInviteLodging} onClose={() => setPeopleOpen(false)} />}
+      {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} canInviteAdmins={canInviteAdmins} canInviteLodging={canInviteLodging} canRemoveAdmins={canRemoveAdmins} onClose={() => setPeopleOpen(false)} />}
       {toast && <div className="toast-message" role="status"><Check size={17} /> {toast}</div>}
     </div>
   )
@@ -744,11 +749,12 @@ function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
     </form></section></div>
 }
 
-function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, canInviteLodging, onClose }: {
+function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, canInviteLodging, canRemoveAdmins, onClose }: {
   workspaceId: string
   workspaceName: string
   canInviteAdmins: boolean
   canInviteLodging: boolean
+  canRemoveAdmins: boolean
   onClose: () => void
 }) {
   const [members, setMembers] = useState<WorkspacePerson[]>([])
@@ -846,24 +852,26 @@ function WorkspacePeopleDialog({ workspaceId, workspaceName, canInviteAdmins, ca
     await loadMembers()
   }
 
-  async function removeAdmin(person: WorkspacePerson) {
-    if (!supabase || !canInviteAdmins || person.role_key !== 'admin' || removingMemberId) return
-    const personLabel = person.display_name || person.email || 'this Admin'
-    if (!window.confirm(`Remove ${personLabel} as an Admin from ${workspaceName}? They will lose access to this planning space.`)) return
+  async function removeMember(person: WorkspacePerson) {
+    const canRemove = person.role_key === 'lodging_manager' ? canInviteAdmins : person.role_key === 'admin' && canRemoveAdmins
+    if (!supabase || !canRemove || removingMemberId) return
+    const personLabel = person.display_name || person.email || 'this person'
+    const roleLabel = person.role_key === 'lodging_manager' ? 'Lodging access' : 'Admin access'
+    if (!window.confirm(`Remove ${roleLabel} for ${personLabel} from ${workspaceName}? They will lose that access to this planning space.`)) return
     setRemovingMemberId(person.id)
     setError('')
     setMessage('')
     const { error: removeError } = await supabase.from('workspace_memberships').delete().eq('id', person.id).eq('workspace_id', workspaceId)
     setRemovingMemberId('')
     if (removeError) {
-      setError('Could not remove this Admin. Check your access and try again.')
+      setError(`Could not remove ${roleLabel.toLowerCase()}. Check your access and try again.`)
       return
     }
     setMembers(current => current.filter(member => member.id !== person.id))
-    setMessage(`${personLabel} no longer has access to this planning space.`)
+    setMessage(`${personLabel} no longer has ${roleLabel.toLowerCase()} in this planning space.`)
   }
 
-  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span>{inviteRoles.length > 1 ? <DropdownSelect ariaLabel="Access level" value={roleKey} onChange={value => setRoleKey(value as InviteRoleKey)} className="people-role-menu" options={inviteRoles.map(role => ({ value: role.key, label: role.name }))} /> : <strong>{selectedRoleName}</strong>}</div><p className="people-help">{roleKey === 'lodging_manager' ? 'This gives access to guest counts, room totals, and allotted room numbers in this planning space. It does not include guest contacts, invitations, replies, or notes.' : 'This adds Admin access to this planning space only.'} New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting || inviteRoles.length === 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : `Invite ${selectedRoleName}`}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span>{canInviteAdmins && person.role_key === 'admin' && <button type="button" className="people-remove-button" aria-label={`Remove ${person.display_name || person.email || 'Admin'} from this planning space`} title="Remove from this space" disabled={removingMemberId === person.id} onClick={() => void removeAdmin(person)}>{removingMemberId === person.id ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={15} />}</button>}</li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
+  return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog people-dialog" role="dialog" aria-modal="true" aria-labelledby="people-dialog-title"><header className="dialog-header"><div><span className="guest-eyebrow">PLANNING SPACE ACCESS</span><h2 id="people-dialog-title">People</h2><p className="people-workspace-name">{workspaceName}</p></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="people-dialog-body"><form className="people-invite-form" onSubmit={invitePerson}><label className="form-field">Email address<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="person@example.com" maxLength={254} required /></label><div className="people-role-line"><span>Access level</span>{inviteRoles.length > 1 ? <DropdownSelect ariaLabel="Access level" value={roleKey} onChange={value => setRoleKey(value as InviteRoleKey)} className="people-role-menu" options={inviteRoles.map(role => ({ value: role.key, label: role.name }))} /> : <strong>{selectedRoleName}</strong>}</div><p className="people-help">{roleKey === 'lodging_manager' ? 'This gives access to guest counts, room totals, and allotted room numbers in this planning space. It does not include guest contacts, invitations, replies, or notes.' : 'This adds Admin access to this planning space only.'} New users receive an invite email; existing accounts are added directly.</p>{error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary-button" disabled={submitting || inviteRoles.length === 0}>{submitting ? <LoaderCircle className="spin" size={17} /> : <Mail size={16} />}{submitting ? 'Sending…' : `Invite ${selectedRoleName}`}</button></form><div className="people-list-heading"><h3>People with access</h3><span>{members.length}</span></div>{membersLoading ? <div className="people-loading"><LoaderCircle className="spin" size={18} /> Loading people…</div> : error && members.length === 0 ? null : members.length === 0 ? <p className="people-empty">No one has access yet.</p> : <ul className="people-list">{members.map(person => <li key={person.id}><span className="people-avatar"><Users size={16} /></span><span className="people-identity"><strong>{person.display_name || person.email || 'Workspace member'}</strong>{person.display_name && person.email && <small>{person.email}</small>}</span><span className="people-role"><strong>{person.role_name}</strong><small>{person.email_confirmed_at ? 'Active' : 'Invite pending'}</small></span>{((canInviteAdmins && person.role_key === 'lodging_manager') || (canRemoveAdmins && person.role_key === 'admin')) && <button type="button" className="people-remove-button" aria-label={`Remove ${person.display_name || person.email || person.role_name} from this planning space`} title="Remove from this space" disabled={removingMemberId === person.id} onClick={() => void removeMember(person)}>{removingMemberId === person.id ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={15} />}</button>}</li>)}</ul>}</div><footer className="dialog-actions people-dialog-actions"><button className="secondary-button" onClick={onClose}>Done</button></footer></section></div>
 }
 
 function GuestCard({ guest, workspaceId, canDelete, deleting, onDelete, onOpen, onEdit }: { guest: GuestGroup; workspaceId: string; canDelete: boolean; deleting: boolean; onDelete: () => void; onOpen: () => void; onEdit: () => void }) {
