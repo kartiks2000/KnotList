@@ -8,6 +8,7 @@ export function GuestRsvpLink({ workspaceId, guestId, guestName }: { workspaceId
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const link = token ? `${window.location.origin}/#rsvp/${token}` : ''
 
@@ -51,6 +52,8 @@ export function GuestRsvpLink({ workspaceId, guestId, guestName }: { workspaceId
   async function copyLink() {
     try {
       await copyTextToClipboard(link)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
       setMessage('Personal RSVP link copied.')
       setError('')
     } catch {
@@ -71,5 +74,5 @@ export function GuestRsvpLink({ workspaceId, guestId, guestName }: { workspaceId
     else { setToken(data); setMessage('A new link is ready. The old link has been disabled.') }
   }
 
-  return <section className="guest-documents guest-personal-rsvp" aria-labelledby="guest-personal-rsvp-title"><div className="guest-documents-heading"><div><h3 id="guest-personal-rsvp-title">Personal RSVP link</h3><p>Only this guest entry is updated when they reply.</p></div><Link2 size={17} /></div>{loading ? <p className="guest-documents-empty"><LoaderCircle className="spin" size={15} /> Creating link…</p> : token ? <><div className="public-rsvp-copy-row"><input aria-label={`Personal RSVP link for ${guestName}`} value={link} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={() => void copyLink()}><Copy size={14} />Copy</button></div><button type="button" className="text-button guest-personal-rsvp-replace" disabled={busy} onClick={() => void replaceLink()}>{busy ? <LoaderCircle className="spin" size={14} /> : <RotateCcw size={14} />}Replace link</button></> : <button type="button" className="secondary-button" disabled={busy} onClick={() => void loadLink()}><Link2 size={14} />Try again</button>}{error && <p className="guest-documents-error" role="alert">{error}</p>}{message && <p className="guest-documents-message" role="status"><Check size={14} />{message}</p>}</section>
+  return <section className="guest-documents guest-personal-rsvp" aria-labelledby="guest-personal-rsvp-title"><div className="guest-documents-heading"><div><h3 id="guest-personal-rsvp-title">Personal RSVP link</h3><p>Only this guest entry is updated when they reply.</p></div><Link2 size={17} /></div>{loading ? <p className="guest-documents-empty"><LoaderCircle className="spin" size={15} /> Creating link…</p> : token ? <><div className="public-rsvp-copy-row"><input aria-label={`Personal RSVP link for ${guestName}`} value={link} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={() => void copyLink()}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Copied' : 'Copy'}</button></div><button type="button" className="text-button guest-personal-rsvp-replace" disabled={busy} onClick={() => void replaceLink()}>{busy ? <LoaderCircle className="spin" size={14} /> : <RotateCcw size={14} />}Replace link</button></> : <button type="button" className="secondary-button" disabled={busy} onClick={() => void loadLink()}><Link2 size={14} />Try again</button>}{error && <p className="guest-documents-error" role="alert">{error}</p>}{message && <p className="guest-documents-message" role="status"><Check size={14} />{message}</p>}</section>
 }

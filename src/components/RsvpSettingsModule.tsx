@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { DEFAULT_PUBLIC_RSVP_SETTINGS, dateOptionLabel, normalizePublicRsvpSettings } from '../lib/publicRsvp'
 import type { PublicRsvpDateOption, PublicRsvpSettings } from '../lib/publicRsvp'
 import { DropdownSelect } from './DropdownSelect'
+import { copyTextToClipboard } from '../lib/copyTextToClipboard'
 
 export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
   const [settings, setSettings] = useState<PublicRsvpSettings>(DEFAULT_PUBLIC_RSVP_SETTINGS)
@@ -15,6 +16,7 @@ export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [copiedLabel, setCopiedLabel] = useState('')
 
   const webLink = token ? `${window.location.origin}/#rsvp/${token}` : ''
   const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/public-rsvp`
@@ -140,7 +142,9 @@ export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId
 
   async function copy(value: string, label: string) {
     try {
-      await navigator.clipboard.writeText(value)
+      await copyTextToClipboard(value)
+      setCopiedLabel(label)
+      window.setTimeout(() => setCopiedLabel(current => current === label ? '' : current), 2000)
       setMessage(`${label} copied.`)
       setError('')
     } catch {
@@ -192,8 +196,8 @@ export function RsvpSettingsModule({ workspaceId, workspaceName }: { workspaceId
         {previewOpen && <RsvpFormPreview workspaceName={workspaceName} settings={settings} />}
         <section className="rsvp-settings-card rsvp-share-card">
           <div className="rsvp-settings-card-heading"><span className="rsvp-settings-icon"><Link2 size={17} /></span><div><h2>Share your RSVP form</h2><p>Both options use the same active token and add replies to {workspaceName}.</p></div></div>
-          <div className="rsvp-share-option"><div className="rsvp-share-title"><strong>Guest-facing web link</strong>{token && <span className="public-rsvp-active-badge"><Check size={12} />Active</span>}</div><small>Share this page with guests to fill in the form.</small>{token ? <><CopyField label="Web RSVP link" value={webLink} onCopy={() => void copy(webLink, 'Web RSVP link')} /><button type="button" className="secondary-button rsvp-share-manage" disabled={linkBusy} onClick={() => void createLink(true)}>{linkBusy ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}Replace link</button><button type="button" className="text-button rsvp-turn-off" disabled={linkBusy} onClick={() => void turnOffLink()}><Trash2 size={14} />Turn off link</button></> : <button type="button" className="primary-button rsvp-create-link" disabled={linkBusy} onClick={() => void createLink()}>{linkBusy ? <LoaderCircle className="spin" size={15} /> : <Link2 size={15} />}{linkBusy ? 'Creating…' : 'Create web link'}</button>}</div>
-          <div className="rsvp-share-option"><div className="rsvp-share-title"><strong>POST endpoint</strong><span className="public-rsvp-method">POST</span></div><small>For another website, form, or integration. Send JSON normally, or multipart/form-data when uploading an identification document.</small><CopyField label="POST endpoint" value={apiEndpoint} onCopy={() => void copy(apiEndpoint, 'POST endpoint')} /><details className="public-rsvp-json-details"><summary>View JSON example</summary><pre>{requestExample}</pre><button type="button" className="text-button" onClick={() => void copy(requestExample, 'JSON example')}><Copy size={14} />Copy JSON</button><p>Send the active token, guest name, and the enabled question values. Use multipart/form-data to attach a document.</p></details></div>
+          <div className="rsvp-share-option"><div className="rsvp-share-title"><strong>Guest-facing web link</strong>{token && <span className="public-rsvp-active-badge"><Check size={12} />Active</span>}</div><small>Share this page with guests to fill in the form.</small>{token ? <><CopyField label="Web RSVP link" value={webLink} copied={copiedLabel === 'Web RSVP link'} onCopy={() => void copy(webLink, 'Web RSVP link')} /><button type="button" className="secondary-button rsvp-share-manage" disabled={linkBusy} onClick={() => void createLink(true)}>{linkBusy ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}Replace link</button><button type="button" className="text-button rsvp-turn-off" disabled={linkBusy} onClick={() => void turnOffLink()}><Trash2 size={14} />Turn off link</button></> : <button type="button" className="primary-button rsvp-create-link" disabled={linkBusy} onClick={() => void createLink()}>{linkBusy ? <LoaderCircle className="spin" size={15} /> : <Link2 size={15} />}{linkBusy ? 'Creating…' : 'Create web link'}</button>}</div>
+          <div className="rsvp-share-option"><div className="rsvp-share-title"><strong>POST endpoint</strong><span className="public-rsvp-method">POST</span></div><small>For another website, form, or integration. Send JSON normally, or multipart/form-data when uploading an identification document.</small><CopyField label="POST endpoint" value={apiEndpoint} copied={copiedLabel === 'POST endpoint'} onCopy={() => void copy(apiEndpoint, 'POST endpoint')} /><details className="public-rsvp-json-details"><summary>View JSON example</summary><pre>{requestExample}</pre><button type="button" className="text-button" onClick={() => void copy(requestExample, 'JSON example')}>{copiedLabel === 'JSON example' ? <Check size={14} /> : <Copy size={14} />}{copiedLabel === 'JSON example' ? 'Copied' : 'Copy JSON'}</button><p>Send the active token, guest name, and the enabled question values. Use multipart/form-data to attach a document.</p></details></div>
         </section>
         <section className="rsvp-settings-tip"><strong>One active link per planning space</strong><p>Replacing the link disables the old web URL and API token. Existing form settings are shared by both submission methods.</p></section>
       </aside>
@@ -250,8 +254,8 @@ function CustomQuestionsEditor({ questions, onChange }: {
   </section>
 }
 
-function CopyField({ label, value, onCopy }: { label: string; value: string; onCopy: () => void }) {
-  return <div className="public-rsvp-copy-row"><input aria-label={label} value={value} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={onCopy}><Copy size={14} />Copy</button></div>
+function CopyField({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return <div className="public-rsvp-copy-row"><input aria-label={label} value={value} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={onCopy}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Copied' : 'Copy'}</button></div>
 }
 
 function RsvpFormPreview({ workspaceName, settings }: { workspaceName: string; settings: PublicRsvpSettings }) {

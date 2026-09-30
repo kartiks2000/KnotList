@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Copy, Link2, LoaderCircle, RotateCcw, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { copyTextToClipboard } from '../lib/copyTextToClipboard'
 
 export function WorkspaceRsvpLinkDialog({ workspaceId, workspaceName, onClose }: { workspaceId: string; workspaceName: string; onClose: () => void }) {
   const [token, setToken] = useState('')
@@ -8,6 +9,7 @@ export function WorkspaceRsvpLinkDialog({ workspaceId, workspaceName, onClose }:
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [copiedLabel, setCopiedLabel] = useState('')
   const link = token ? `${window.location.origin}/#rsvp/${token}` : ''
   const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/public-rsvp`
   const submitJson = JSON.stringify({
@@ -60,7 +62,9 @@ export function WorkspaceRsvpLinkDialog({ workspaceId, workspaceName, onClose }:
 
   async function copyValue(value: string, label: string) {
     try {
-      await navigator.clipboard.writeText(value)
+      await copyTextToClipboard(value)
+      setCopiedLabel(label)
+      window.setTimeout(() => setCopiedLabel(current => current === label ? '' : current), 2000)
       setMessage(`${label} copied.`)
       setError('')
     } catch {
@@ -90,16 +94,16 @@ export function WorkspaceRsvpLinkDialog({ workspaceId, workspaceName, onClose }:
           <div className="public-rsvp-link-option-heading"><span className="public-rsvp-link-icon"><Link2 size={17} /></span><div><span className="public-rsvp-link-kicker">FOR GUESTS</span><h3>Web RSVP page</h3></div>{token && <span className="public-rsvp-active-badge"><Check size={12} />Active</span>}</div>
           <p>Share this page so guests can fill in the RSVP form themselves.</p>
           {loading ? <div className="public-rsvp-link-loading"><LoaderCircle className="spin" size={16} />Checking active link…</div>
-            : token ? <><div className="public-rsvp-copy-row"><input aria-label="Active web RSVP link" value={link} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={() => void copyValue(link, 'Web link')}><Copy size={15} />Copy</button></div><div className="public-rsvp-link-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => void createLink(true)}>{busy ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}Replace link</button><button type="button" className="danger-button" disabled={busy} onClick={() => void revokeLink()}><X size={15} />Turn off</button></div><small className="public-rsvp-link-note">Replacing it immediately disables the old URL.</small></>
+            : token ? <><div className="public-rsvp-copy-row"><input aria-label="Active web RSVP link" value={link} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={() => void copyValue(link, 'Web link')}>{copiedLabel === 'Web link' ? <Check size={15} /> : <Copy size={15} />}{copiedLabel === 'Web link' ? 'Copied' : 'Copy'}</button></div><div className="public-rsvp-link-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => void createLink(true)}>{busy ? <LoaderCircle className="spin" size={15} /> : <RotateCcw size={15} />}Replace link</button><button type="button" className="danger-button" disabled={busy} onClick={() => void revokeLink()}><X size={15} />Turn off</button></div><small className="public-rsvp-link-note">Replacing it immediately disables the old URL.</small></>
               : <button type="button" className="primary-button" disabled={busy} onClick={() => void createLink()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Link2 size={16} />}{busy ? 'Creating…' : 'Create web RSVP link'}</button>}
         </section>
 
         <section className="public-rsvp-link-option api-link-option">
           <div className="public-rsvp-link-option-heading"><span className="public-rsvp-link-icon api-link-icon"><span>{'{ }'}</span></span><div><span className="public-rsvp-link-kicker">FOR INTEGRATIONS</span><h3>POST endpoint</h3></div><span className="public-rsvp-method">POST</span></div>
           <p>Send JSON from another app. Include the active RSVP token in the request body.</p>
-          <div className="public-rsvp-copy-row"><input aria-label="RSVP POST endpoint" value={apiEndpoint} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={() => void copyValue(apiEndpoint, 'POST endpoint')}><Copy size={15} />Copy</button></div>
+          <div className="public-rsvp-copy-row"><input aria-label="RSVP POST endpoint" value={apiEndpoint} readOnly onFocus={event => event.currentTarget.select()} /><button type="button" className="secondary-button" onClick={() => void copyValue(apiEndpoint, 'POST endpoint')}>{copiedLabel === 'POST endpoint' ? <Check size={15} /> : <Copy size={15} />}{copiedLabel === 'POST endpoint' ? 'Copied' : 'Copy'}</button></div>
           <small className="public-rsvp-link-note">Use <code>Content-Type: application/json</code> and your public Supabase key in the <code>apikey</code> header. Never use the service-role key.</small>
-          <details className="public-rsvp-json-details"><summary>View request JSON</summary><pre>{submitJson}</pre><button type="button" className="text-button" onClick={() => void copyValue(submitJson, 'Request JSON')}><Copy size={14} />Copy JSON</button></details>
+          <details className="public-rsvp-json-details"><summary>View request JSON</summary><pre>{submitJson}</pre><button type="button" className="text-button" onClick={() => void copyValue(submitJson, 'Request JSON')}>{copiedLabel === 'Request JSON' ? <Check size={14} /> : <Copy size={14} />}{copiedLabel === 'Request JSON' ? 'Copied' : 'Copy JSON'}</button></details>
         </section>
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}{message && <p className="form-message" role="status"><Check size={15} />{message}</p>}
