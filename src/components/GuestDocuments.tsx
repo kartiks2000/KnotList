@@ -4,7 +4,7 @@ import { Download, FileText, Image as ImageIcon, LoaderCircle, Trash2, Upload } 
 import { supabase } from '../lib/supabase'
 
 const bucket = 'guest-documents'
-const maxFileBytes = 20 * 1024 * 1024
+const maxFileBytes = 2 * 1024 * 1024
 const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
 const acceptedFileTypes = 'application/pdf,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif'
 
@@ -16,7 +16,7 @@ export async function uploadGuestDocuments(workspaceId: string, guestId: string,
       uploadedCount: 0,
       error: !allowedTypes.has(invalidFile.type)
         ? `${invalidFile.name} is not a supported PDF or image file.`
-        : `${invalidFile.name} is larger than the 20 MB limit.`,
+        : `${invalidFile.name} is larger than the 2 MB limit.`,
     }
   }
 

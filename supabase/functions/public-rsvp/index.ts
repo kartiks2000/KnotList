@@ -101,7 +101,7 @@ Deno.serve(async request => {
   if (identificationFile) {
     const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
     if (!allowedTypes.has(identificationFile.type)) return response({ error: 'Upload a PDF or image file for identification.' }, 400)
-    if (identificationFile.size < 1 || identificationFile.size > 20 * 1024 * 1024) return response({ error: 'The identification document must be 20 MB or smaller.' }, 400)
+    if (identificationFile.size < 1 || identificationFile.size > 2 * 1024 * 1024) return response({ error: 'The identification document must be 2 MB or smaller.' }, 400)
   }
 
   const name = typeof input.name === 'string' ? input.name.trim() : ''
