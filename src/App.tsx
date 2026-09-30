@@ -144,6 +144,7 @@ function CompleteInvitedAccount({ session }: { session: Session }) {
 }
 
 function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+  const userId = session.user.id
   const [loading, setLoading] = useState(true)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [assignedRoles, setAssignedRoles] = useState<string[]>([])
@@ -161,8 +162,8 @@ function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut
       setLoading(true)
       setError('')
       const [platformResult, membershipResult] = await Promise.all([
-        supabase!.from('platform_roles').select('role_id').eq('user_id', session.user.id),
-        supabase!.from('workspace_memberships').select('role_id, workspace_id').eq('user_id', session.user.id),
+        supabase!.from('platform_roles').select('role_id').eq('user_id', userId),
+        supabase!.from('workspace_memberships').select('role_id, workspace_id').eq('user_id', userId),
       ])
       if (!alive) return
       if (platformResult.error || membershipResult.error) {
@@ -212,7 +213,7 @@ function AuthenticatedHome({ session, onSignOut }: { session: Session; onSignOut
     }
     void loadAccess()
     return () => { alive = false }
-  }, [session, retry])
+  }, [userId, retry])
 
   async function createWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

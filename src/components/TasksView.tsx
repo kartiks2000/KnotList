@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Check, Circle, ListChecks, LoaderCircle, MessageCircle, Plus, Send, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { DropdownSelect } from './DropdownSelect'
@@ -18,6 +18,37 @@ type WorkspaceTask = {
   workspace_task_comments: TaskComment[]
 }
 
+type TaskCardActions = {
+  toggle: (task: WorkspaceTask) => void
+  remove: (task: WorkspaceTask) => void
+  comment: (task: WorkspaceTask, body: string) => void
+  draft: (taskId: string, value: string) => void
+}
+
+const TaskCard = memo(function TaskCard({ task, canManage, busy, assignee, commentDraft, actions }: {
+  task: WorkspaceTask
+  canManage: boolean
+  busy: boolean
+  assignee: string
+  commentDraft: string
+  actions: TaskCardActions
+}) {
+  return <article className={`task-card ${task.is_completed ? 'task-completed' : ''}`}>
+    <div className="task-card-main">
+      <button className="task-complete-button" aria-label={task.is_completed ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`} title={task.is_completed ? 'Mark incomplete' : 'Mark complete'} disabled={!canManage || busy} onClick={() => actions.toggle(task)}>{task.is_completed ? <Check size={15} /> : <Circle size={17} />}</button>
+      <div className="task-info"><h2>{task.title}</h2>{task.description && <p className="task-description">{task.description}</p>}<div className="task-meta"><span>{assignee}</span>{task.deadline && <span><CalendarDays size={13} />Due {formatDeadline(task.deadline)}</span>}</div></div>
+      {canManage && <button className="task-delete-button" aria-label={`Delete ${task.title}`} title="Delete task" disabled={busy} onClick={() => actions.remove(task)}>{busy ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}</button>}
+    </div>
+    <details className="task-comments">
+      <summary><MessageCircle size={15} /><span>Comments</span><span className="task-comment-count">{task.workspace_task_comments.length}</span></summary>
+      <div className="task-comments-body">
+        {task.workspace_task_comments.length > 0 ? <ul>{task.workspace_task_comments.map(comment => <li key={comment.id}><div><strong>{comment.author_name}</strong><time dateTime={comment.created_at}>{formatCommentDate(comment.created_at)}</time></div><p>{comment.body}</p></li>)}</ul> : <p className="task-no-comments">No comments yet.</p>}
+        <form className="task-comment-form" onSubmit={event => { event.preventDefault(); actions.comment(task, commentDraft) }}><label className="sr-only" htmlFor={`task-comment-${task.id}`}>Add a status comment</label><input id={`task-comment-${task.id}`} value={commentDraft} onChange={event => actions.draft(task.id, event.target.value)} maxLength={1000} placeholder="Share a quick update…" required /><button className="task-comment-submit" disabled={busy || !commentDraft.trim()} aria-label="Post comment" title="Post comment"><Send size={15} /></button></form>
+      </div>
+    </details>
+  </article>
+})
+
 function formatDeadline(value: string | null) {
   if (!value) return ''
   const [year, month, day] = value.split('-').map(Number)
@@ -28,7 +59,7 @@ function formatCommentDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
 }
 
-export function TasksView({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
+export const TasksView = memo(function TasksView({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
   const [tasks, setTasks] = useState<WorkspaceTask[]>([])
   const [assignees, setAssignees] = useState<TaskAssignee[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
@@ -45,21 +76,30 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [busyTaskId, setBusyTaskId] = useState('')
   const [error, setError] = useState('')
+  const taskActionsRef = useRef<TaskCardActions>({ toggle: () => {}, remove: () => {}, comment: () => {}, draft: () => {} })
+  const loadSequenceRef = useRef(0)
+  const createDialogOpenRef = useRef(false)
+  const deferredRealtimeRefreshRef = useRef(false)
+  createDialogOpenRef.current = createDialogOpen
 
-  async function loadTasks() {
+  async function loadTasks(quiet = false) {
     if (!supabase) return
-    setLoading(true)
+    const requestSequence = ++loadSequenceRef.current
+    if (!quiet) setLoading(true)
     setError('')
     const [userResult, taskResult, assigneeResult] = await Promise.all([
       supabase.auth.getUser(),
       supabase.from('workspace_tasks').select('id, workspace_id, title, description, assigned_to, deadline, is_completed, created_at').eq('workspace_id', workspaceId).order('created_at', { ascending: false }),
       supabase.rpc('get_workspace_task_assignees', { requested_workspace_id: workspaceId }),
     ])
+    if (requestSequence !== loadSequenceRef.current) return
     if (taskResult.error || assigneeResult.error) {
-      setTasks([])
-      setAssignees([])
+      if (!quiet) {
+        setTasks([])
+        setAssignees([])
+      }
       setError(taskResult.error?.message || assigneeResult.error?.message || 'Could not load tasks. Apply the tasks migration, then try again.')
-      setLoading(false)
+      if (!quiet) setLoading(false)
       return
     }
 
@@ -68,9 +108,10 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     const commentResult = ids.length
       ? await supabase.from('workspace_task_comments').select('id, workspace_id, task_id, user_id, author_name, body, created_at').eq('workspace_id', workspaceId).in('task_id', ids).order('created_at', { ascending: true })
       : { data: [], error: null }
+    if (requestSequence !== loadSequenceRef.current) return
     if (commentResult.error) {
       setError(commentResult.error.message)
-      setLoading(false)
+      if (!quiet) setLoading(false)
       return
     }
     const comments = (commentResult.data ?? []) as TaskComment[]
@@ -88,6 +129,57 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
   useEffect(() => {
     void loadTasks()
   }, [workspaceId])
+
+  useEffect(() => {
+    if (!supabase || !canManage) return
+    let active = true
+    let didSubscribe = false
+    let refreshTimer = 0
+    const refreshTasks = () => {
+      if (createDialogOpenRef.current) {
+        deferredRealtimeRefreshRef.current = true
+        return
+      }
+      void loadTasks(true)
+    }
+    const scheduleRefresh = () => {
+      window.clearTimeout(refreshTimer)
+      refreshTimer = window.setTimeout(() => {
+        if (active) refreshTasks()
+      }, 250)
+    }
+
+    // To disable automatic data refresh (for example, if Realtime quota is exhausted),
+    // remove this subscription effect; manual refresh and post-save loads remain available.
+    const channel = supabase.channel(`workspace-task-data-${workspaceId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'workspace_data_versions',
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, scheduleRefresh)
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          if (didSubscribe) scheduleRefresh()
+          didSubscribe = true
+        }
+      })
+
+    return () => {
+      active = false
+      window.clearTimeout(refreshTimer)
+      void supabase?.removeChannel(channel)
+    }
+  }, [workspaceId, canManage])
+
+  function closeCreateDialog() {
+    createDialogOpenRef.current = false
+    setCreateDialogOpen(false)
+    if (deferredRealtimeRefreshRef.current) {
+      deferredRealtimeRefreshRef.current = false
+      void loadTasks(true)
+    }
+  }
 
   const visibleTasks = useMemo(() => tasks.filter(task => (filter === 'all' || (filter === 'completed' ? task.is_completed : !task.is_completed)) && (assigneeFilter === 'all' || task.assigned_to === assigneeFilter)), [tasks, filter, assigneeFilter])
 
@@ -111,11 +203,13 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     setTitle('')
     setDescription('')
     setDeadline('')
+    createDialogOpenRef.current = false
     setCreateDialogOpen(false)
+    deferredRealtimeRefreshRef.current = false
     setSaving(false)
     const { data: notificationEventId } = await supabase.rpc('get_workspace_task_notification_event_id', { requested_task_id: createdTask.id, requested_comment_id: null })
     if (notificationEventId) void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId } })
-    await loadTasks()
+    await loadTasks(true)
   }
 
   async function toggleTask(task: WorkspaceTask) {
@@ -149,15 +243,14 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     setTasks(current => current.filter(item => item.id !== task.id))
   }
 
-  async function addComment(event: React.FormEvent<HTMLFormElement>, task: WorkspaceTask) {
-    event.preventDefault()
-    if (!supabase || !commentDrafts[task.id]?.trim() || busyTaskId) return
+  async function addComment(task: WorkspaceTask, body: string) {
+    if (!supabase || !body.trim() || busyTaskId) return
     setBusyTaskId(task.id)
     setError('')
     const { data: insertedComment, error: insertError } = await supabase.from('workspace_task_comments').insert({
       workspace_id: workspaceId,
       task_id: task.id,
-      body: commentDrafts[task.id].trim(),
+      body: body.trim(),
     }).select('id').single()
     setBusyTaskId('')
     if (insertError) {
@@ -167,7 +260,7 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     setCommentDrafts(current => ({ ...current, [task.id]: '' }))
     const { data: notificationEventId } = await supabase.rpc('get_workspace_task_notification_event_id', { requested_task_id: task.id, requested_comment_id: insertedComment.id })
     if (notificationEventId) void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId } })
-    await loadTasks()
+    await loadTasks(true)
   }
 
   const assigneeLabel = (userId: string | null) => {
@@ -175,6 +268,19 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     const person = assignees.find(assignee => assignee.user_id === userId)
     return person ? (person.display_name || person.email || 'Admin') : 'Former admin'
   }
+
+  taskActionsRef.current = {
+    toggle: task => { void toggleTask(task) },
+    remove: task => { void deleteTask(task) },
+    comment: (task, body) => { void addComment(task, body) },
+    draft: (taskId, value) => setCommentDrafts(current => ({ ...current, [taskId]: value })),
+  }
+  const actions = useMemo<TaskCardActions>(() => ({
+    toggle: task => taskActionsRef.current.toggle(task),
+    remove: task => taskActionsRef.current.remove(task),
+    comment: (task, body) => taskActionsRef.current.comment(task, body),
+    draft: (taskId, value) => taskActionsRef.current.draft(taskId, value),
+  }), [])
 
   return <section className="tasks-page" aria-labelledby="tasks-title">
     <header className="tasks-heading"><div><h1 id="tasks-title">Tasks</h1></div>{canManage && <button className="primary-button task-open-create" onClick={() => setCreateDialogOpen(true)}><Plus size={17} /><span>Add task</span></button>}</header>
@@ -185,21 +291,8 @@ export function TasksView({ workspaceId, canManage }: { workspaceId: string; can
     <div className="task-list" aria-live="polite">
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={21} /> Loading tasks…</div>
         : visibleTasks.length === 0 ? <div className="task-empty"><ListChecks size={21} /><h2>{assigneeFilter !== 'all' ? 'No tasks for this person' : filter === 'completed' ? 'No completed tasks' : filter === 'incomplete' ? 'All caught up' : 'No tasks yet'}</h2><p>{canManage ? 'Add a task above when something needs doing.' : 'Tasks added to this planning space will show up here.'}</p></div>
-          : visibleTasks.map(task => <article className={`task-card ${task.is_completed ? 'task-completed' : ''}`} key={task.id}>
-            <div className="task-card-main">
-              <button className="task-complete-button" aria-label={task.is_completed ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`} title={task.is_completed ? 'Mark incomplete' : 'Mark complete'} disabled={!canManage || busyTaskId === task.id} onClick={() => void toggleTask(task)}>{task.is_completed ? <Check size={15} /> : <Circle size={17} />}</button>
-              <div className="task-info"><h2>{task.title}</h2>{task.description && <p className="task-description">{task.description}</p>}<div className="task-meta"><span>{assigneeLabel(task.assigned_to)}</span>{task.deadline && <span><CalendarDays size={13} />Due {formatDeadline(task.deadline)}</span>}</div></div>
-              {canManage && <button className="task-delete-button" aria-label={`Delete ${task.title}`} title="Delete task" disabled={busyTaskId === task.id} onClick={() => void deleteTask(task)}>{busyTaskId === task.id ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}</button>}
-            </div>
-            <details className="task-comments">
-              <summary><MessageCircle size={15} /><span>Comments</span><span className="task-comment-count">{task.workspace_task_comments.length}</span></summary>
-              <div className="task-comments-body">
-                {task.workspace_task_comments.length > 0 ? <ul>{task.workspace_task_comments.map(comment => <li key={comment.id}><div><strong>{comment.author_name}</strong><time dateTime={comment.created_at}>{formatCommentDate(comment.created_at)}</time></div><p>{comment.body}</p></li>)}</ul> : <p className="task-no-comments">No comments yet.</p>}
-                <form className="task-comment-form" onSubmit={event => void addComment(event, task)}><label className="sr-only" htmlFor={`task-comment-${task.id}`}>Add a status comment</label><input id={`task-comment-${task.id}`} value={commentDrafts[task.id] ?? ''} onChange={event => setCommentDrafts(current => ({ ...current, [task.id]: event.target.value }))} maxLength={1000} placeholder="Share a quick update…" required /><button className="task-comment-submit" disabled={busyTaskId === task.id || !commentDrafts[task.id]?.trim()} aria-label="Post comment" title="Post comment"><Send size={15} /></button></form>
-              </div>
-            </details>
-          </article>)}
+          : visibleTasks.map(task => <TaskCard key={task.id} task={task} canManage={canManage} busy={busyTaskId === task.id} assignee={assigneeLabel(task.assigned_to)} commentDraft={commentDrafts[task.id] ?? ''} actions={actions} />)}
     </div>
-    {createDialogOpen && canManage && <div className="dialog-backdrop task-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) setCreateDialogOpen(false) }}><section className="guest-dialog task-create-dialog" role="dialog" aria-modal="true" aria-labelledby="task-create-title"><header className="dialog-header"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h2 id="task-create-title">Add task</h2></div><button className="dialog-close" type="button" onClick={() => setCreateDialogOpen(false)} aria-label="Close" disabled={saving}><X size={19} /></button></header><form className="task-dialog-form guest-form" onSubmit={event => void createTask(event)}><label className="form-field">Task title<input value={title} onChange={event => setTitle(event.target.value)} maxLength={180} placeholder="What needs to get done?" required autoFocus /></label><label className="form-field">Description <span className="optional-label">(optional)</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={2000} rows={4} placeholder="Add a few details" /></label><div className="form-field"><span>Assign to</span><DropdownSelect value={assignedTo} onChange={setAssignedTo} ariaLabel="Assign task to" placeholder={assignees.length ? 'Choose an Admin' : 'No Admins available'} disabled={assignees.length === 0} className="form-dropdown-select" options={assignees.map(person => ({ value: person.user_id, label: person.user_id === currentUserId ? `Me${currentUserEmail ? ` (${currentUserEmail})` : ''}` : person.display_name || person.email || 'Admin' }))} /></div><label className="form-field">Deadline <span className="optional-label">(optional)</span><input type="date" value={deadline} onChange={event => setDeadline(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<footer className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setCreateDialogOpen(false)} disabled={saving}>Cancel</button><button className="primary-button" disabled={saving || !title.trim() || !assignedTo}>{saving ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />}{saving ? 'Adding…' : 'Add task'}</button></footer></form></section></div>}
+    {createDialogOpen && canManage && <div className="dialog-backdrop task-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) closeCreateDialog() }}><section className="guest-dialog task-create-dialog" role="dialog" aria-modal="true" aria-labelledby="task-create-title"><header className="dialog-header"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h2 id="task-create-title">Add task</h2></div><button className="dialog-close" type="button" onClick={closeCreateDialog} aria-label="Close" disabled={saving}><X size={19} /></button></header><form className="task-dialog-form guest-form" onSubmit={event => void createTask(event)}><label className="form-field">Task title<input value={title} onChange={event => setTitle(event.target.value)} maxLength={180} placeholder="What needs to get done?" required autoFocus /></label><label className="form-field">Description <span className="optional-label">(optional)</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={2000} rows={4} placeholder="Add a few details" /></label><div className="form-field"><span>Assign to</span><DropdownSelect value={assignedTo} onChange={setAssignedTo} ariaLabel="Assign task to" placeholder={assignees.length ? 'Choose an Admin' : 'No Admins available'} disabled={assignees.length === 0} className="form-dropdown-select" options={assignees.map(person => ({ value: person.user_id, label: person.user_id === currentUserId ? `Me${currentUserEmail ? ` (${currentUserEmail})` : ''}` : person.display_name || person.email || 'Admin' }))} /></div><label className="form-field">Deadline <span className="optional-label">(optional)</span><input type="date" value={deadline} onChange={event => setDeadline(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<footer className="dialog-actions"><button type="button" className="secondary-button" onClick={closeCreateDialog} disabled={saving}>Cancel</button><button className="primary-button" disabled={saving || !title.trim() || !assignedTo}>{saving ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />}{saving ? 'Adding…' : 'Add task'}</button></footer></form></section></div>}
   </section>
-}
+})
