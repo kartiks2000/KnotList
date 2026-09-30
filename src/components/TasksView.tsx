@@ -78,6 +78,7 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
   const [error, setError] = useState('')
   const taskActionsRef = useRef<TaskCardActions>({ toggle: () => {}, remove: () => {}, comment: () => {}, draft: () => {} })
   const loadSequenceRef = useRef(0)
+  const lastFocusRefreshRef = useRef(0)
 
   async function loadTasks(quiet = false) {
     if (!supabase) return
@@ -127,6 +128,22 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
     void loadTasks()
   }, [workspaceId])
 
+  useEffect(() => {
+    const refreshOnReturn = () => {
+      if (document.visibilityState !== 'visible' || createDialogOpen || saving || busyTaskId) return
+      const now = Date.now()
+      if (now - lastFocusRefreshRef.current < 1500) return
+      lastFocusRefreshRef.current = now
+      void loadTasks(true)
+    }
+    window.addEventListener('focus', refreshOnReturn)
+    document.addEventListener('visibilitychange', refreshOnReturn)
+    return () => {
+      window.removeEventListener('focus', refreshOnReturn)
+      document.removeEventListener('visibilitychange', refreshOnReturn)
+    }
+  }, [workspaceId, createDialogOpen, saving, busyTaskId])
+
   function closeCreateDialog() {
     setCreateDialogOpen(false)
   }
@@ -171,6 +188,7 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
       return
     }
     setTasks(current => current.map(item => item.id === task.id ? { ...item, is_completed: !task.is_completed } : item))
+    await loadTasks(true)
   }
 
   async function deleteTask(task: WorkspaceTask) {
@@ -189,6 +207,7 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
       return
     }
     setTasks(current => current.filter(item => item.id !== task.id))
+    await loadTasks(true)
   }
 
   async function addComment(task: WorkspaceTask, body: string) {
