@@ -78,9 +78,6 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
   const [error, setError] = useState('')
   const taskActionsRef = useRef<TaskCardActions>({ toggle: () => {}, remove: () => {}, comment: () => {}, draft: () => {} })
   const loadSequenceRef = useRef(0)
-  const createDialogOpenRef = useRef(false)
-  const deferredRealtimeRefreshRef = useRef(false)
-  createDialogOpenRef.current = createDialogOpen
 
   async function loadTasks(quiet = false) {
     if (!supabase) return
@@ -130,55 +127,8 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
     void loadTasks()
   }, [workspaceId])
 
-  useEffect(() => {
-    if (!supabase || !canManage) return
-    let active = true
-    let didSubscribe = false
-    let refreshTimer = 0
-    const refreshTasks = () => {
-      if (createDialogOpenRef.current) {
-        deferredRealtimeRefreshRef.current = true
-        return
-      }
-      void loadTasks(true)
-    }
-    const scheduleRefresh = () => {
-      window.clearTimeout(refreshTimer)
-      refreshTimer = window.setTimeout(() => {
-        if (active) refreshTasks()
-      }, 250)
-    }
-
-    // To disable automatic data refresh (for example, if Realtime quota is exhausted),
-    // remove this subscription effect; manual refresh and post-save loads remain available.
-    const channel = supabase.channel(`workspace-task-data-${workspaceId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'workspace_data_versions',
-        filter: `workspace_id=eq.${workspaceId}`,
-      }, scheduleRefresh)
-      .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
-          if (didSubscribe) scheduleRefresh()
-          didSubscribe = true
-        }
-      })
-
-    return () => {
-      active = false
-      window.clearTimeout(refreshTimer)
-      void supabase?.removeChannel(channel)
-    }
-  }, [workspaceId, canManage])
-
   function closeCreateDialog() {
-    createDialogOpenRef.current = false
     setCreateDialogOpen(false)
-    if (deferredRealtimeRefreshRef.current) {
-      deferredRealtimeRefreshRef.current = false
-      void loadTasks(true)
-    }
   }
 
   const visibleTasks = useMemo(() => tasks.filter(task => (filter === 'all' || (filter === 'completed' ? task.is_completed : !task.is_completed)) && (assigneeFilter === 'all' || task.assigned_to === assigneeFilter)), [tasks, filter, assigneeFilter])
@@ -203,9 +153,7 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
     setTitle('')
     setDescription('')
     setDeadline('')
-    createDialogOpenRef.current = false
     setCreateDialogOpen(false)
-    deferredRealtimeRefreshRef.current = false
     setSaving(false)
     const { data: notificationEventId } = await supabase.rpc('get_workspace_task_notification_event_id', { requested_task_id: createdTask.id, requested_comment_id: null })
     if (notificationEventId) void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId } })
