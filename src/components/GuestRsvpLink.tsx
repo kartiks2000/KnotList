@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Copy, Link2, LoaderCircle, RotateCcw } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { copyTextToClipboard } from '../lib/copyTextToClipboard'
 
 export function GuestRsvpLink({ workspaceId, guestId, guestName }: { workspaceId: string; guestId: string; guestName: string }) {
   const [token, setToken] = useState('')
@@ -13,25 +14,35 @@ export function GuestRsvpLink({ workspaceId, guestId, guestName }: { workspaceId
   async function loadLink() {
     if (!supabase) { setError('RSVP links are unavailable.'); setLoading(false); return }
     setLoading(true); setError('')
-    const { data, error: linkError } = await supabase.rpc('get_or_create_guest_rsvp_link', {
-      requested_workspace_id: workspaceId,
-      requested_guest_group_id: guestId,
-      rotate_link: false,
-    })
-    if (linkError || typeof data !== 'string') setError('Could not create this guest’s RSVP link. Check admin access and try again.')
-    else setToken(data)
-    setLoading(false)
+    try {
+      const { data, error: linkError } = await supabase.rpc('get_or_create_guest_rsvp_link', {
+        requested_workspace_id: workspaceId,
+        requested_guest_group_id: guestId,
+        rotate_link: false,
+      })
+      if (linkError || typeof data !== 'string') setError('Could not create this guest’s RSVP link. Check admin access and try again.')
+      else setToken(data)
+    } catch {
+      setError('Could not create this guest’s RSVP link. Check your connection and try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
     let active = true
     async function load() {
       if (!supabase) { setError('RSVP links are unavailable.'); setLoading(false); return }
+      try {
       const { data, error: linkError } = await supabase.rpc('get_or_create_guest_rsvp_link', { requested_workspace_id: workspaceId, requested_guest_group_id: guestId, rotate_link: false })
       if (!active) return
       if (linkError || typeof data !== 'string') setError('Could not create this guest’s RSVP link. Check admin access and try again.')
       else setToken(data)
-      setLoading(false)
+      } catch {
+        if (active) setError('Could not create this guest’s RSVP link. Check your connection and try again.')
+      } finally {
+        if (active) setLoading(false)
+      }
     }
     void load()
     return () => { active = false }
@@ -39,7 +50,7 @@ export function GuestRsvpLink({ workspaceId, guestId, guestName }: { workspaceId
 
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(link)
+      await copyTextToClipboard(link)
       setMessage('Personal RSVP link copied.')
       setError('')
     } catch {

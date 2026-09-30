@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { ArrowLeft, BedDouble, CalendarDays, Check, ChevronDown, ChevronRight, Copy, Edit3, FileDown, FileSpreadsheet, FileText, Gift, Heart, ListChecks, LoaderCircle, LogOut, Mail, MessageCircle, Phone, Plus, Search, Settings2, Table2, Trash2, Upload, UserPlus, UserRound, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { copyTextToClipboard } from '../lib/copyTextToClipboard'
 import { normalizePublicRsvpSettings } from '../lib/publicRsvp'
 import { TasksView } from './TasksView'
 import { GuestDocuments, GuestIdentificationDocument, uploadGuestDocuments } from './GuestDocuments'
@@ -199,9 +200,6 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const [savingLodgingStatuses, setSavingLodgingStatuses] = useState<Set<string>>(() => new Set())
   const [peopleOpen, setPeopleOpen] = useState(false)
   const guestLoadSequenceRef = useRef(0)
-  const editDialogOpenRef = useRef(false)
-  const deferredRealtimeRefreshRef = useRef(false)
-  editDialogOpenRef.current = editorOpen || Boolean(lodgingEditingGuest)
 
   function selectSection(next: WorkspaceSection) {
     setSection(next)
@@ -209,80 +207,87 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   }
 
   async function loadGuests() {
-    if (!supabase) return
+    if (!supabase) {
+      setLoadError('Guest data is unavailable because the database connection is not configured.')
+      setLoading(false)
+      return
+    }
     const requestSequence = ++guestLoadSequenceRef.current
     setLoading(true)
     setLoadError('')
-    const [guestRead, guestManage, lodgingRead, lodgingManage, giftsRead, giftsManage, workspaceRead, tasksManage] = await Promise.all([
-      supabase.rpc('has_permission', { requested_permission: 'app_data.read', requested_workspace_id: workspaceId }),
-      supabase.rpc('has_permission', { requested_permission: 'app_data.manage', requested_workspace_id: workspaceId }),
-      supabase.rpc('has_permission', { requested_permission: 'lodging.read', requested_workspace_id: workspaceId }),
-      supabase.rpc('has_permission', { requested_permission: 'lodging.manage', requested_workspace_id: workspaceId }),
-      supabase.rpc('has_permission', { requested_permission: 'gifts.read', requested_workspace_id: workspaceId }),
-      supabase.rpc('has_permission', { requested_permission: 'gifts.manage', requested_workspace_id: workspaceId }),
-      supabase.rpc('has_permission', { requested_permission: 'workspace.read', requested_workspace_id: workspaceId }),
-      supabase.rpc('has_permission', { requested_permission: 'tasks.manage', requested_workspace_id: workspaceId }),
-    ])
-    if (requestSequence !== guestLoadSequenceRef.current) return
-    const canReadGuestData = !guestRead.error && guestRead.data === true
-    const canManageGuestData = !guestManage.error && guestManage.data === true
-    const canReadLodgingData = !lodgingRead.error && lodgingRead.data === true
-    const canManageLodgingData = !lodgingManage.error && lodgingManage.data === true
-    setCanAccessGuests(canReadGuestData)
-    setCanManageGuests(canManageGuestData)
-    setCanAccessLodging(canReadLodgingData)
-    setCanAccessGifts(!giftsRead.error && giftsRead.data === true)
-    // Tasks are an Admin-only module, even though other workspace roles can read workspace data.
-    setCanAccessTasks(!tasksManage.error && tasksManage.data === true)
-    setCanManageTasks(!tasksManage.error && tasksManage.data === true)
-    setCanManageLodging(canManageLodgingData)
-    setCanManageGifts(!giftsManage.error && giftsManage.data === true)
-
-    const availableSections: WorkspaceSection[] = []
-    if (canReadGuestData) availableSections.push('guests')
-    if (canReadLodgingData) availableSections.push('lodging')
-    if (!giftsRead.error && giftsRead.data === true) availableSections.push('gifts')
-    if (!tasksManage.error && tasksManage.data === true) availableSections.push('tasks')
-    if (canManageGuestData) availableSections.push('whatsapp')
-    if (canManageGuestData) availableSections.push('settings')
-    const savedSection = window.localStorage.getItem(workspaceSectionStorageKey(workspaceId))
-    setSection(current => {
-      if (isWorkspaceSection(savedSection) && availableSections.includes(savedSection)) return savedSection
-      if (availableSections.includes(current)) return current
-      return availableSections[0] ?? 'guests'
-    })
-
-    if (canReadGuestData) {
-      const { data, error } = await supabase.from('guest_groups').select('*').eq('workspace_id', workspaceId).order('family_name', { ascending: true })
+    try {
+      const [guestRead, guestManage, lodgingRead, lodgingManage, giftsRead, giftsManage, workspaceRead, tasksManage] = await Promise.all([
+        supabase.rpc('has_permission', { requested_permission: 'app_data.read', requested_workspace_id: workspaceId }),
+        supabase.rpc('has_permission', { requested_permission: 'app_data.manage', requested_workspace_id: workspaceId }),
+        supabase.rpc('has_permission', { requested_permission: 'lodging.read', requested_workspace_id: workspaceId }),
+        supabase.rpc('has_permission', { requested_permission: 'lodging.manage', requested_workspace_id: workspaceId }),
+        supabase.rpc('has_permission', { requested_permission: 'gifts.read', requested_workspace_id: workspaceId }),
+        supabase.rpc('has_permission', { requested_permission: 'gifts.manage', requested_workspace_id: workspaceId }),
+        supabase.rpc('has_permission', { requested_permission: 'workspace.read', requested_workspace_id: workspaceId }),
+        supabase.rpc('has_permission', { requested_permission: 'tasks.manage', requested_workspace_id: workspaceId }),
+      ])
       if (requestSequence !== guestLoadSequenceRef.current) return
-      if (error) {
-        setLoadError(error.message)
+      const canReadGuestData = !guestRead.error && guestRead.data === true
+      const canManageGuestData = !guestManage.error && guestManage.data === true
+      const canReadLodgingData = !lodgingRead.error && lodgingRead.data === true
+      const canManageLodgingData = !lodgingManage.error && lodgingManage.data === true
+      setCanAccessGuests(canReadGuestData)
+      setCanManageGuests(canManageGuestData)
+      setCanAccessLodging(canReadLodgingData)
+      setCanAccessGifts(!giftsRead.error && giftsRead.data === true)
+      // Tasks are an Admin-only module, even though other workspace roles can read workspace data.
+      setCanAccessTasks(!tasksManage.error && tasksManage.data === true)
+      setCanManageTasks(!tasksManage.error && tasksManage.data === true)
+      setCanManageLodging(canManageLodgingData)
+      setCanManageGifts(!giftsManage.error && giftsManage.data === true)
+
+      const availableSections: WorkspaceSection[] = []
+      if (canReadGuestData) availableSections.push('guests')
+      if (canReadLodgingData) availableSections.push('lodging')
+      if (!giftsRead.error && giftsRead.data === true) availableSections.push('gifts')
+      if (!tasksManage.error && tasksManage.data === true) availableSections.push('tasks')
+      if (canManageGuestData) availableSections.push('whatsapp')
+      if (canManageGuestData) availableSections.push('settings')
+      const savedSection = window.localStorage.getItem(workspaceSectionStorageKey(workspaceId))
+      setSection(current => {
+        if (isWorkspaceSection(savedSection) && availableSections.includes(savedSection)) return savedSection
+        if (availableSections.includes(current)) return current
+        return availableSections[0] ?? 'guests'
+      })
+
+      if (canReadGuestData) {
+        const { data, error } = await supabase.from('guest_groups').select('*').eq('workspace_id', workspaceId).order('family_name', { ascending: true })
+        if (requestSequence !== guestLoadSequenceRef.current) return
+        if (error) {
+          setLoadError(error.message)
+          setGuests([])
+        } else {
+          setGuests((data ?? []) as GuestGroup[])
+        }
+      } else if (canReadLodgingData) {
+        const { data, error } = await supabase.rpc('get_workspace_lodging', { requested_workspace_id: workspaceId })
+        if (requestSequence !== guestLoadSequenceRef.current) return
+        if (error) {
+          setLoadError(error.message)
+          setGuests([])
+        } else {
+          setGuests((data ?? []) as GuestGroup[])
+        }
+      } else if (!workspaceRead.error && workspaceRead.data === true) {
         setGuests([])
       } else {
-        setGuests((data ?? []) as GuestGroup[])
-      }
-    } else if (canReadLodgingData) {
-      const { data, error } = await supabase.rpc('get_workspace_lodging', { requested_workspace_id: workspaceId })
-      if (requestSequence !== guestLoadSequenceRef.current) return
-      if (error) {
-        setLoadError(error.message)
+        setLoadError('You do not have access to guest or lodging details in this planning space.')
         setGuests([])
-      } else {
-        setGuests((data ?? []) as GuestGroup[])
       }
-    } else if (!workspaceRead.error && workspaceRead.data === true) {
-      setGuests([])
-    } else {
-      setLoadError('You do not have access to guest or lodging details in this planning space.')
-      setGuests([])
+    } catch (error) {
+      if (requestSequence === guestLoadSequenceRef.current) {
+        console.error('Failed to load guests', error)
+        setGuests([])
+        setLoadError('Could not load guest data. Check your connection and try again.')
+      }
+    } finally {
+      if (requestSequence === guestLoadSequenceRef.current) setLoading(false)
     }
-    setLoading(false)
-  }
-
-  function refreshDeferredGuestData() {
-    if (!deferredRealtimeRefreshRef.current) return
-    deferredRealtimeRefreshRef.current = false
-    void loadGuests()
   }
 
   useEffect(() => {
@@ -321,7 +326,6 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   }, [])
 
   useEffect(() => {
-    deferredRealtimeRefreshRef.current = false
     setEditorOpen(false)
     setDetailsGuest(null)
     setLodgingDocumentsGuest(null)
@@ -338,62 +342,6 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setSection(isWorkspaceSection(savedSection) ? savedSection : 'guests')
     void loadGuests()
   }, [workspaceId])
-
-  useEffect(() => {
-    if (!supabase) return
-    const shouldSubscribe = (section === 'guests' && canAccessGuests)
-      || (section === 'lodging' && canAccessLodging)
-      || (section === 'gifts' && canAccessGifts)
-    if (!shouldSubscribe) return
-
-    let active = true
-    let didSubscribe = false
-    let refreshTimer = 0
-    const refreshGuestRows = async () => {
-      if (!active) return
-      if (editDialogOpenRef.current) {
-        deferredRealtimeRefreshRef.current = true
-        return
-      }
-      const requestSequence = ++guestLoadSequenceRef.current
-      const result = canAccessGuests
-        ? await supabase!.from('guest_groups').select('*').eq('workspace_id', workspaceId).order('family_name', { ascending: true })
-        : await supabase!.rpc('get_workspace_lodging', { requested_workspace_id: workspaceId })
-      if (!active || requestSequence !== guestLoadSequenceRef.current) return
-      if (result.error) {
-        setLoadError('Could not refresh this planning space. Check your connection and try again.')
-        return
-      }
-      setLoadError('')
-      setGuests((result.data ?? []) as GuestGroup[])
-    }
-    const scheduleRefresh = () => {
-      window.clearTimeout(refreshTimer)
-      refreshTimer = window.setTimeout(() => { void refreshGuestRows() }, 250)
-    }
-
-    // To disable automatic data refresh (for example, if Realtime quota is exhausted),
-    // remove this subscription effect; manual refresh and post-save loads remain available.
-    const channel = supabase.channel(`workspace-data-${workspaceId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'workspace_data_versions',
-        filter: `workspace_id=eq.${workspaceId}`,
-      }, scheduleRefresh)
-      .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
-          if (didSubscribe) scheduleRefresh()
-          didSubscribe = true
-        }
-      })
-
-    return () => {
-      active = false
-      window.clearTimeout(refreshTimer)
-      void supabase?.removeChannel(channel)
-    }
-  }, [workspaceId, section, canAccessGuests, canAccessLodging, canAccessGifts])
 
   useEffect(() => {
     let alive = true
@@ -561,7 +509,6 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setEditingGuest(null)
     setLodgingEditingGuest(null)
     setDetailsGuest(null)
-    deferredRealtimeRefreshRef.current = false
     setToast(documentStatus || `${guest.family_name} ${wasEditing ? 'saved' : 'added'}`)
     window.setTimeout(() => setToast(''), documentStatus ? 6500 : 3000)
     void loadGuests()
@@ -612,8 +559,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       <nav className="mobile-workspace-nav" aria-label="Planning space sections">{canAccessGuests && <button className={section === 'guests' ? 'section-selected' : ''} aria-current={section === 'guests' ? 'page' : undefined} onClick={() => selectSection('guests')}><Users size={18} /><span>Guests</span></button>}{canAccessLodging && <button className={section === 'lodging' ? 'section-selected' : ''} aria-current={section === 'lodging' ? 'page' : undefined} onClick={() => selectSection('lodging')}><BedDouble size={18} /><span>Lodging</span></button>}{canAccessGifts && <button className={section === 'gifts' ? 'section-selected' : ''} aria-current={section === 'gifts' ? 'page' : undefined} onClick={() => selectSection('gifts')}><Gift size={18} /><span>Gifts</span></button>}{canAccessTasks && <button className={section === 'tasks' ? 'section-selected' : ''} aria-current={section === 'tasks' ? 'page' : undefined} onClick={() => selectSection('tasks')}><ListChecks size={18} /><span>Tasks</span></button>}{canManageGuests && <button className={section === 'whatsapp' ? 'section-selected' : ''} aria-current={section === 'whatsapp' ? 'page' : undefined} onClick={() => selectSection('whatsapp')}><MessageCircle size={18} /><span>Invite</span></button>}</nav>
       </div>
 
-      {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => { setEditorOpen(false); refreshDeferredGuestData() }} onSaved={(guest, documentStatus) => notifySaved(guest, Boolean(editingGuest), documentStatus)} />}
-      {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => { setLodgingEditingGuest(null); refreshDeferredGuestData() }} onSaved={guest => notifySaved(guest, true)} />}
+      {editorOpen && <GuestEditor key={editingGuest?.id ?? 'new'} workspaceId={workspaceId} guest={editingGuest} onClose={() => setEditorOpen(false)} onSaved={(guest, documentStatus) => notifySaved(guest, Boolean(editingGuest), documentStatus)} />}
+      {lodgingEditingGuest && <LodgingEditor key={lodgingEditingGuest.id} workspaceId={workspaceId} guest={lodgingEditingGuest} onClose={() => setLodgingEditingGuest(null)} onSaved={guest => notifySaved(guest, true)} />}
       {detailsGuest && <GuestDetails workspaceId={workspaceId} guest={detailsGuest} canDelete={canManageGuests} deleting={deletingGuestId === detailsGuest.id} onDelete={() => void deleteGuest(detailsGuest)} onClose={() => setDetailsGuest(null)} onEdit={() => showEditor(detailsGuest)} />}
       {lodgingDocumentsGuest && <LodgingDocumentsDialog workspaceId={workspaceId} guest={lodgingDocumentsGuest} onClose={() => setLodgingDocumentsGuest(null)} />}
       {peopleOpen && canManagePeople && <WorkspacePeopleDialog workspaceId={workspaceId} workspaceName={workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'} canInviteAdmins={canInviteAdmins} canInviteLodging={canInviteLodging} canRemoveAdmins={canRemoveAdmins} onClose={() => setPeopleOpen(false)} />}
@@ -999,7 +946,7 @@ const GuestCard = memo(function GuestCard({ guest, workspaceId, canDelete, delet
         rotate_link: false,
       })
       if (error || typeof data !== 'string') throw error ?? new Error('RSVP link unavailable')
-      await navigator.clipboard.writeText(`${window.location.origin}/#rsvp/${data}`)
+      await copyTextToClipboard(`${window.location.origin}/#rsvp/${data}`)
       setLinkCopied(true)
       window.setTimeout(() => setLinkCopied(false), 2200)
     } catch {
@@ -1080,7 +1027,9 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
     if (!supabase) return
     setSaving(true)
     setError('')
-    const payload = {
+    let savedGuest: GuestGroup | null = null
+    try {
+      const payload = {
       workspace_id: workspaceId,
       family_name: guestName.trim(),
       contact_name: contactName.trim(),
@@ -1097,43 +1046,45 @@ function GuestEditor({ workspaceId, guest, onClose, onSaved }: {
       assigned_room_numbers: assignedRooms.map(room => room.trim()).filter(Boolean),
       notes: notes.trim(),
       updated_by: (await supabase.auth.getUser()).data.user?.id ?? null,
-    }
-    const result = guest
-      ? await supabase.from('guest_groups').update(payload).eq('workspace_id', workspaceId).eq('id', guest.id).select().single()
-      : await supabase.from('guest_groups').insert(payload).select().single()
-    if (result.error) {
-      const message = result.error.message
-      setError(message.includes('guest_groups_checkout_after_checkin')
-        ? 'Check-out needs to be after check-in.'
-        : message.toLowerCase().includes('row-level security') || message.toLowerCase().includes('permission')
-          ? 'You don’t have permission to save this guest. Ask your workspace admin for access.'
-          : 'Couldn’t save this guest. Check your connection and try again.')
-      setSaving(false)
-      return
-    }
-    const savedGuest = result.data as GuestGroup
-    if (guest && guest.rsvp_status !== savedGuest.rsvp_status && savedGuest.rsvp_status !== 'pending' && savedGuest.last_rsvp_notification_event_id) {
-      void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId: savedGuest.last_rsvp_notification_event_id } })
-    }
-    let documentStatus = ''
-    if (documentFiles.length > 0) {
-      const { uploadedCount, error: uploadError } = await uploadGuestDocuments(workspaceId, savedGuest.id, documentFiles)
-      if (uploadError) {
-        documentStatus = uploadedCount
-          ? `${savedGuest.family_name} saved; ${uploadedCount} ${uploadedCount === 1 ? 'document was' : 'documents were'} uploaded. ${uploadError}`
-          : `${savedGuest.family_name} saved, but the documents could not be uploaded: ${uploadError}`
       }
+      const result = guest
+        ? await supabase.from('guest_groups').update(payload).eq('workspace_id', workspaceId).eq('id', guest.id).select().single()
+        : await supabase.from('guest_groups').insert(payload).select().single()
+      if (result.error) {
+        const message = result.error.message
+        setError(message.includes('guest_groups_checkout_after_checkin')
+          ? 'Check-out needs to be after check-in.'
+          : message.toLowerCase().includes('row-level security') || message.toLowerCase().includes('permission')
+            ? 'You don’t have permission to save this guest. Ask your workspace admin for access.'
+            : 'Couldn’t save this guest. Check your connection and try again.')
+        return
+      }
+      const savedRecord = result.data as GuestGroup
+      savedGuest = savedRecord
+      if (guest && guest.rsvp_status !== savedRecord.rsvp_status && savedRecord.rsvp_status !== 'pending' && savedRecord.last_rsvp_notification_event_id) {
+        void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId: savedRecord.last_rsvp_notification_event_id } })
+      }
+      let documentStatus = ''
+      if (documentFiles.length > 0) {
+        const { uploadedCount, error: uploadError } = await uploadGuestDocuments(workspaceId, savedRecord.id, documentFiles)
+        if (uploadError) {
+          documentStatus = uploadedCount
+            ? `${savedRecord.family_name} saved; ${uploadedCount} ${uploadedCount === 1 ? 'document was' : 'documents were'} uploaded. ${uploadError}`
+            : `${savedRecord.family_name} saved, but the documents could not be uploaded: ${uploadError}`
+        }
+      }
+      if (!guest && !documentStatus) documentStatus = 'Guest added. Their personal RSVP link will be ready in guest details.'
+      onSaved(savedRecord, documentStatus)
+    } catch (saveError) {
+      console.error('Failed to save guest', saveError)
+      if (savedGuest) {
+        onSaved(savedGuest, `${savedGuest.family_name} saved, but a follow-up step did not finish. Check their documents in guest details.`)
+      } else {
+        setError('Couldn’t save this guest. Check your connection and try again.')
+      }
+    } finally {
+      setSaving(false)
     }
-    if (!guest) {
-      const { error: rsvpLinkError } = await supabase.rpc('get_or_create_guest_rsvp_link', {
-        requested_workspace_id: workspaceId,
-        requested_guest_group_id: savedGuest.id,
-        rotate_link: false,
-      })
-      if (rsvpLinkError) documentStatus = [documentStatus, 'Guest saved, but the personal RSVP link could not be created. Open guest details and try again.'].filter(Boolean).join(' ')
-      else if (!documentStatus) documentStatus = 'Guest added. Their personal RSVP link is ready in guest details.'
-    }
-    onSaved(savedGuest, documentStatus)
   }
 
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="guest-dialog editor-dialog" role="dialog" aria-modal="true" aria-labelledby="guest-editor-title"><header className="dialog-header"><div><span className="guest-eyebrow">GUEST DETAILS</span><h2 id="guest-editor-title">{guest ? 'Edit guest' : 'Add a guest'}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close"><X size={20} /></button></header><form className="guest-form" onSubmit={save}>
