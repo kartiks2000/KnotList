@@ -245,6 +245,7 @@
 
 .notification-backdrop{display:none}
 .notification-header-actions{display:flex;align-items:center;gap:5px;flex:0 0 auto}
+.mobile-notification-bell{display:none}
 .notification-header-actions>button{height:30px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:#879084;cursor:pointer}
 .notification-header-actions>button:hover{background:#f2f3ee}
 .notification-header-actions .notification-mark-all{padding:0 7px;color:#607660;font-size:9px;font-weight:600;white-space:nowrap}

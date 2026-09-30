@@ -24,6 +24,7 @@ export function PublicRsvpPage({ token }: { token: string }) {
   const [saving, setSaving] = useState(false)
   const tooManyTextWords = settings?.customQuestions.some(question => question.type === 'text' && countWords(customAnswers[question.id] ?? '') > 100) ?? false
   const [submitted, setSubmitted] = useState(false)
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function PublicRsvpPage({ token }: { token: string }) {
         setWorkspaceName(data.workspaceName)
         setSettings(normalizePublicRsvpSettings(data.settings))
         setPersonalized(data.isPersonalized === true)
+        setAlreadySubmitted(data.alreadySubmitted === true)
       }
       setLoading(false)
     }
@@ -90,10 +92,10 @@ export function PublicRsvpPage({ token }: { token: string }) {
   return <main className="public-rsvp-page">
     <section className="public-rsvp-card">
       <a className="public-rsvp-brand" href="/" aria-label="KnotList"><span><Heart size={21} /></span><strong>knotlist</strong></a>
-      <div className="public-rsvp-heading"><span className="guest-eyebrow">YOU’RE INVITED</span><h1>{loading ? 'One moment…' : settings?.title || 'RSVP'}</h1>{(settings ? settings.intro : workspaceName ? `RSVP for ${workspaceName}` : 'We’d love to know if you can join us.') && <p>{settings ? settings.intro : workspaceName ? `RSVP for ${workspaceName}` : 'We’d love to know if you can join us.'}</p>}</div>
+      {!submitted && !alreadySubmitted && <div className="public-rsvp-heading"><span className="guest-eyebrow">YOU’RE INVITED</span><h1>{loading ? 'One moment…' : settings?.title || 'RSVP'}</h1>{(settings ? settings.intro : workspaceName ? `RSVP for ${workspaceName}` : 'We’d love to know if you can join us.') && <p>{settings ? settings.intro : workspaceName ? `RSVP for ${workspaceName}` : 'We’d love to know if you can join us.'}</p>}</div>}
       {loading ? <div className="public-rsvp-loading"><LoaderCircle className="spin" size={21} /> Loading invitation…</div>
         : !settings ? <div className="public-rsvp-error" role="alert">{error || 'Could not load the RSVP form settings. Please contact the planner.'}</div>
-          : submitted ? <div className="public-rsvp-success" role="status"><span><Check size={21} /></span><h2>Thank you for replying</h2><p>Your RSVP has been sent to {workspaceName}.</p></div>
+          : submitted || alreadySubmitted ? <div className="public-rsvp-success" role="status"><span><Check size={21} /></span><h2>RSVP submitted</h2><p>A response has already been recorded</p></div>
             : <form className="public-rsvp-form" onSubmit={submit}>
               <label className="public-rsvp-label">Your name<input autoComplete="name" value={name} onChange={event => setName(event.target.value)} maxLength={140} placeholder="Enter your name" required />{personalized && <small>This name is saved as an RSVP answer. The guest name in the planner’s list stays unchanged.</small>}</label>
               {settings?.askGuestCount && <label className="public-rsvp-label">Number of people<div className="public-rsvp-input-icon"><Users size={17} /><input type="number" min="1" max="500" step="1" value={guestCount} onChange={event => setGuestCount(event.target.value)} required /></div></label>}
