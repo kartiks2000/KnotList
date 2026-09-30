@@ -201,6 +201,7 @@
 .lodging-card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:12px;border-bottom:1px solid #eeece6}
 .lodging-card-heading h2{margin:0 0 4px;overflow:hidden;color:#455347;font:500 17px 'Playfair Display',serif;text-overflow:ellipsis;white-space:nowrap}
 .lodging-card-heading span{color:#858a81;font-size:11px}
+.lodging-card-rsvp-name{display:grid;gap:3px;padding:9px 0;border-bottom:1px solid #eeece6}.lodging-card-rsvp-name small{color:#92968d;font-size:9px}.lodging-card-rsvp-name strong{overflow-wrap:anywhere;color:#4f5b50;font-size:11px;font-weight:600}
 .lodging-card-edit{width:36px;height:36px;flex:0 0 auto;display:grid;place-items:center;border:1px solid #e7e5de;border-radius:7px;background:#fbfaf7;color:#607360;cursor:pointer}
 .lodging-card-edit:hover{background:#eef0e9}
 .lodging-card-details{display:grid;grid-template-columns:minmax(78px,.65fr) minmax(0,1.35fr);gap:12px;margin:0;padding-top:12px}
