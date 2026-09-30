@@ -200,21 +200,24 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const [savingLodgingStatuses, setSavingLodgingStatuses] = useState<Set<string>>(() => new Set())
   const [peopleOpen, setPeopleOpen] = useState(false)
   const guestLoadSequenceRef = useRef(0)
+  const lastGuestFocusRefreshRef = useRef(0)
 
   function selectSection(next: WorkspaceSection) {
     setSection(next)
     window.localStorage.setItem(workspaceSectionStorageKey(workspaceId), next)
   }
 
-  async function loadGuests() {
+  async function loadGuests(quiet = false) {
     if (!supabase) {
       setLoadError('Guest data is unavailable because the database connection is not configured.')
       setLoading(false)
       return
     }
     const requestSequence = ++guestLoadSequenceRef.current
-    setLoading(true)
-    setLoadError('')
+    if (!quiet) {
+      setLoading(true)
+      setLoadError('')
+    }
     try {
       const [guestRead, guestManage, lodgingRead, lodgingManage, giftsRead, giftsManage, workspaceRead, tasksManage] = await Promise.all([
         supabase.rpc('has_permission', { requested_permission: 'app_data.read', requested_workspace_id: workspaceId }),
@@ -259,31 +262,53 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
         const { data, error } = await supabase.from('guest_groups').select('*').eq('workspace_id', workspaceId).order('family_name', { ascending: true })
         if (requestSequence !== guestLoadSequenceRef.current) return
         if (error) {
-          setLoadError(error.message)
-          setGuests([])
+          if (!quiet) {
+            setLoadError(error.message)
+            setGuests([])
+          } else {
+            setToast('Could not refresh guest data. Check your connection.')
+            window.setTimeout(() => setToast(''), 3500)
+          }
         } else {
+          setLoadError('')
           setGuests((data ?? []) as GuestGroup[])
         }
       } else if (canReadLodgingData) {
         const { data, error } = await supabase.rpc('get_workspace_lodging', { requested_workspace_id: workspaceId })
         if (requestSequence !== guestLoadSequenceRef.current) return
         if (error) {
-          setLoadError(error.message)
-          setGuests([])
+          if (!quiet) {
+            setLoadError(error.message)
+            setGuests([])
+          } else {
+            setToast('Could not refresh guest data. Check your connection.')
+            window.setTimeout(() => setToast(''), 3500)
+          }
         } else {
+          setLoadError('')
           setGuests((data ?? []) as GuestGroup[])
         }
       } else if (!workspaceRead.error && workspaceRead.data === true) {
         setGuests([])
       } else {
-        setLoadError('You do not have access to guest or lodging details in this planning space.')
-        setGuests([])
+        if (quiet && (guestRead.error || lodgingRead.error || workspaceRead.error)) {
+          setToast('Could not refresh guest data. Check your connection.')
+          window.setTimeout(() => setToast(''), 3500)
+        } else {
+          setLoadError('You do not have access to guest or lodging details in this planning space.')
+          setGuests([])
+        }
       }
     } catch (error) {
       if (requestSequence === guestLoadSequenceRef.current) {
         console.error('Failed to load guests', error)
-        setGuests([])
-        setLoadError('Could not load guest data. Check your connection and try again.')
+        if (!quiet) {
+          setGuests([])
+          setLoadError('Could not load guest data. Check your connection and try again.')
+        } else {
+          setToast('Could not refresh guest data. Check your connection.')
+          window.setTimeout(() => setToast(''), 3500)
+        }
       }
     } finally {
       if (requestSequence === guestLoadSequenceRef.current) setLoading(false)
@@ -342,6 +367,26 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setSection(isWorkspaceSection(savedSection) ? savedSection : 'guests')
     void loadGuests()
   }, [workspaceId])
+
+  useEffect(() => {
+    const refreshOnReturn = () => {
+      if (document.visibilityState !== 'visible'
+        || !['guests', 'lodging', 'gifts'].includes(section)
+        || loading || editorOpen || lodgingEditingGuest || detailsGuest
+        || lodgingDocumentsGuest || peopleOpen || deletingGuestId
+        || savingGiftFields.size > 0 || savingLodgingStatuses.size > 0) return
+      const now = Date.now()
+      if (now - lastGuestFocusRefreshRef.current < 1500) return
+      lastGuestFocusRefreshRef.current = now
+      void loadGuests(true)
+    }
+    window.addEventListener('focus', refreshOnReturn)
+    document.addEventListener('visibilitychange', refreshOnReturn)
+    return () => {
+      window.removeEventListener('focus', refreshOnReturn)
+      document.removeEventListener('visibilitychange', refreshOnReturn)
+    }
+  }, [section, loading, editorOpen, lodgingEditingGuest, detailsGuest, lodgingDocumentsGuest, peopleOpen, deletingGuestId, savingGiftFields, savingLodgingStatuses, workspaceId])
 
   useEffect(() => {
     let alive = true
@@ -403,6 +448,8 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       setGuests(current => current.map(item => item.id === guest.id ? { ...item, [field]: !value } : item))
       setToast('Could not save the gift status. Please try again.')
       window.setTimeout(() => setToast(''), 3500)
+    } else {
+      void loadGuests(true)
     }
   }, [canManageGifts, workspaceId])
 
@@ -426,6 +473,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       return
     }
     setGuests(current => current.map(item => item.id === key ? { ...item, ...updated } : item))
+    void loadGuests(true)
     if (updated.notification_event_id) {
       // Persisted in-app alerts are created by the status RPC; this sends best-effort browser push.
       void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId: updated.notification_event_id } })
@@ -447,6 +495,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       setGuests(current => current.map(item => item.id === guestId ? { ...item, invitation_sent: guest.invitation_sent, invitation_sent_at: guest.invitation_sent_at } : item))
       return false
     }
+    void loadGuests(true)
     return true
   }
 
@@ -469,6 +518,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setDetailsGuest(current => current?.id === guest.id ? null : current)
     setToast(`${guest.family_name} moved to deleted guests`)
     window.setTimeout(() => setToast(''), 3500)
+    void loadGuests(true)
   }
 
   async function exportGuests(format: 'csv' | 'pdf') {
@@ -511,7 +561,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     setDetailsGuest(null)
     setToast(documentStatus || `${guest.family_name} ${wasEditing ? 'saved' : 'added'}`)
     window.setTimeout(() => setToast(''), documentStatus ? 6500 : 3000)
-    void loadGuests()
+    void loadGuests(true)
   }
 
   return (
