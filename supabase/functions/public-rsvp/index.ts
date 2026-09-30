@@ -72,7 +72,12 @@ Deno.serve(async request => {
     if (error) return response({ error: 'Could not load this RSVP page.' }, 500)
     const workspaceName = data?.[0]?.workspace_name
     if (!workspaceName) return response({ error: 'This RSVP link is invalid or has been turned off.' }, 404)
-    return response({ workspaceName, settings: data[0].settings, isPersonalized: Boolean(data[0].guest_group_id) })
+    return response({
+      workspaceName,
+      settings: data[0].settings,
+      isPersonalized: Boolean(data[0].guest_group_id),
+      alreadySubmitted: data[0].already_submitted === true,
+    })
   }
 
   const [{ data: formRows, error: formError }, { data: workspaceRows, error: workspaceError }] = await Promise.all([
@@ -80,6 +85,7 @@ Deno.serve(async request => {
     adminClient.rpc('get_public_workspace_rsvp', { requested_token: token }),
   ])
   if (formError || workspaceError || !formRows?.[0] || !workspaceRows?.[0]) return response({ error: 'This RSVP link is invalid or has been turned off.' }, 404)
+  if (workspaceRows[0].already_submitted === true) return response({ error: 'This RSVP has already been submitted.' }, 409)
   const isPersonalized = Boolean(workspaceRows[0].guest_group_id)
   if (isPersonalized !== Boolean(formRows[0].guest_group_id)
     || (isPersonalized && workspaceRows[0].guest_group_id !== formRows[0].guest_group_id)) {
@@ -113,7 +119,7 @@ Deno.serve(async request => {
     if (uploadError) return response({ error: 'Could not upload the identification document. Please try again.' }, 500)
     documentMetadata = { storagePath: uploadedPath, fileName: identificationFile.name.slice(0, 255), mimeType: identificationFile.type, sizeBytes: identificationFile.size }
   }
-  const { data, error } = await adminClient.rpc('submit_public_workspace_rsvp', {
+  const { data, error } = await adminClient.rpc('submit_public_workspace_rsvp_once', {
     requested_token: token,
     requested_form_data: {
       name,
@@ -131,9 +137,10 @@ Deno.serve(async request => {
     // details are enough to diagnose stale/invalid form questions.
     console.error('Public RSVP submission failed:', { code: error.code, message: error.message })
     if (uploadedPath) await adminClient.storage.from('guest-documents').remove([uploadedPath])
+    const alreadySubmitted = error.message.includes('already been submitted')
     const invalidLink = error.message.includes('invalid or has been turned off')
     const answerValidationError = error.code === '22023'
-    return response({ error: invalidLink ? 'This RSVP link is invalid or has been turned off.' : answerValidationError ? error.message : 'Could not save your RSVP. Please check your answers and try again.' }, invalidLink ? 404 : 400)
+    return response({ error: alreadySubmitted ? 'This RSVP has already been submitted.' : invalidLink ? 'This RSVP link is invalid or has been turned off.' : answerValidationError ? error.message : 'Could not save your RSVP. Please check your answers and try again.' }, alreadySubmitted ? 409 : invalidLink ? 404 : 400)
   }
   const workspaceName = data?.[0]?.workspace_name
   if (!workspaceName) return response({ error: 'Could not save your RSVP. Please try again.' }, 500)
