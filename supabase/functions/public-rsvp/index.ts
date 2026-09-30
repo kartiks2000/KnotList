@@ -146,52 +146,61 @@ Deno.serve(async request => {
   if (!workspaceName) return response({ error: 'Could not save your RSVP. Please try again.' }, 500)
 
   // The in-app notification is created in the same database transaction as the RSVP.
-  // Browser push is best-effort so a missing VAPID setup or a stale subscription
-  // never makes a successfully saved RSVP appear to fail.
+  // Browser push runs as a background task so its network requests do not delay the
+  // guest's success response.
   const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY')
   const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY')
   const vapidSubject = Deno.env.get('VAPID_SUBJECT')
   const appUrl = Deno.env.get('APP_URL')
   const submitted = data[0]
   if (vapidPublicKey && vapidPrivateKey && vapidSubject && appUrl && submitted.workspace_id && submitted.notification_event_id) {
-    try {
-      const { data: recipients } = await adminClient.rpc('get_workspace_rsvp_notification_recipient_ids', {
-        requested_workspace_id: submitted.workspace_id,
-      })
-      const recipientIds = [...new Set((recipients ?? []).map((row: { user_id: string }) => row.user_id))]
-      if (recipientIds.length) {
-        const { data: subscriptions } = await adminClient.from('browser_push_subscriptions')
-          .select('user_id, endpoint, p256dh, auth')
-          .in('user_id', recipientIds)
-        webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey)
-        const answer = submitted.rsvp_status === 'confirmed' ? 'Yes' : 'No'
-        const guestCount = Number(submitted.guest_count)
-        const payload = JSON.stringify({
-          title: 'New self RSVP',
-          body: `${name} replied ${answer} (${guestCount} ${guestCount === 1 ? 'person' : 'people'}).`,
-          url: new URL('/#home', appUrl).toString(),
+    const sendBrowserPush = async () => {
+      try {
+        const { data: recipients } = await adminClient.rpc('get_workspace_rsvp_notification_recipient_ids', {
+          requested_workspace_id: submitted.workspace_id,
         })
-        await Promise.allSettled((subscriptions ?? []).map(async subscription => {
-          try {
-            await webpush.sendNotification({
-              endpoint: subscription.endpoint,
-              keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-            }, payload)
-          } catch (pushError) {
-            const statusCode = typeof pushError === 'object' && pushError !== null && 'statusCode' in pushError
-              ? Number((pushError as { statusCode: unknown }).statusCode)
-              : 0
-            if (statusCode === 404 || statusCode === 410) {
-              await adminClient.from('browser_push_subscriptions')
-                .delete()
-                .eq('user_id', subscription.user_id)
-                .eq('endpoint', subscription.endpoint)
+        const recipientIds = [...new Set((recipients ?? []).map((row: { user_id: string }) => row.user_id))]
+        if (recipientIds.length) {
+          const { data: subscriptions } = await adminClient.from('browser_push_subscriptions')
+            .select('user_id, endpoint, p256dh, auth')
+            .in('user_id', recipientIds)
+          webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey)
+          const answer = submitted.rsvp_status === 'confirmed' ? 'Yes' : 'No'
+          const guestCount = Number(submitted.guest_count)
+          const payload = JSON.stringify({
+            title: 'New self RSVP',
+            body: `${name} replied ${answer} (${guestCount} ${guestCount === 1 ? 'person' : 'people'}).`,
+            url: new URL('/#home', appUrl).toString(),
+          })
+          await Promise.allSettled((subscriptions ?? []).map(async subscription => {
+            try {
+              await webpush.sendNotification({
+                endpoint: subscription.endpoint,
+                keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+              }, payload)
+            } catch (pushError) {
+              const statusCode = typeof pushError === 'object' && pushError !== null && 'statusCode' in pushError
+                ? Number((pushError as { statusCode: unknown }).statusCode)
+                : 0
+              if (statusCode === 404 || statusCode === 410) {
+                await adminClient.from('browser_push_subscriptions')
+                  .delete()
+                  .eq('user_id', subscription.user_id)
+                  .eq('endpoint', subscription.endpoint)
+              }
             }
-          }
-        }))
+          }))
+        }
+      } catch (pushError) {
+        console.error('Could not send public RSVP browser push notification:', pushError)
       }
-    } catch (pushError) {
-      console.error('Could not send public RSVP browser push notification:', pushError)
+    }
+    try {
+      EdgeRuntime.waitUntil(sendBrowserPush())
+    } catch (pushQueueError) {
+      // If background scheduling is unavailable, preserve RSVP success rather than
+      // falling back to synchronous delivery.
+      console.error('Could not queue public RSVP browser push notification:', pushQueueError)
     }
   }
   return response({ success: true, workspaceName })
