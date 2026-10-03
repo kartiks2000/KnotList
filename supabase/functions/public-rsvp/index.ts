@@ -95,10 +95,8 @@ Deno.serve(async request => {
   console.info('Public RSVP submission route:', { isPersonalized })
   const formSettings = formRows[0].settings ?? {}
   const documentEnabled = formSettings.askIdentificationDocument === true
-  const documentRequired = formSettings.requireIdentificationDocument === true
   if (identificationFiles.length > 8) return response({ error: 'Upload no more than 8 identification documents.' }, 400)
   if (identificationFiles.length && (!documentEnabled || input.rsvp !== 'confirmed')) return response({ error: 'Identification documents are not expected for this response.' }, 400)
-  if (documentRequired && input.rsvp === 'confirmed' && !identificationFiles.length) return response({ error: 'Upload an identification document to submit this RSVP.' }, 400)
   if (identificationFiles.length) {
     const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
     if (identificationFiles.some(file => !allowedTypes.has(file.type))) return response({ error: 'Upload PDF or image files for identification.' }, 400)

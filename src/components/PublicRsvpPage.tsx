@@ -30,7 +30,6 @@ export function PublicRsvpPage({ token }: { token: string }) {
 
   function selectIdentificationDocuments(files: FileList | null) {
     const selected = [...identificationDocuments, ...Array.from(files ?? [])]
-      .filter((file, index, all) => all.findIndex(other => other.name === file.name && other.size === file.size && other.lastModified === file.lastModified) === index)
     if (selected.length > 8) {
       setError('Choose up to 8 identification documents.')
       return
@@ -76,10 +75,6 @@ export function PublicRsvpPage({ token }: { token: string }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!supabase || !rsvp) return
-    if (rsvp === 'confirmed' && settings?.askIdentificationDocument && settings.requireIdentificationDocument && !identificationDocuments.length) {
-      setError('Upload at least one identification document to submit this RSVP.')
-      return
-    }
     setSaving(true)
     setError('')
     const payload = {
@@ -130,7 +125,7 @@ export function PublicRsvpPage({ token }: { token: string }) {
                 </fieldset>)}
               </>}
               {error && <p className="public-rsvp-error" role="alert">{error}</p>}
-              <button className="primary-button public-rsvp-submit" disabled={saving || tooManyTextWords || !rsvp || (rsvp === 'confirmed' && Boolean(settings?.askCheckinDate && !checkinDate || settings?.askCheckoutDate && !checkoutDate || settings?.requireIdentificationDocument && !identificationDocuments.length))}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Sending RSVP…' : 'Send RSVP'}</button>
+              <button className="primary-button public-rsvp-submit" disabled={saving || tooManyTextWords || !rsvp || (rsvp === 'confirmed' && Boolean(settings?.askCheckinDate && !checkinDate || settings?.askCheckoutDate && !checkoutDate))}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Sending RSVP…' : 'Send RSVP'}</button>
             </form>}
     </section>
   </main>
