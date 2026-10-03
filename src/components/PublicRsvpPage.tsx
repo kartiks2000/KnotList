@@ -24,6 +24,22 @@ export function PublicRsvpPage({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const tooManyTextWords = rsvp === 'confirmed' && (settings?.customQuestions.some(question => question.type === 'text' && countWords(customAnswers[question.id] ?? '') > 100) ?? false)
+  const missingCustomQuestion = rsvp === 'confirmed' ? settings?.customQuestions.find(question => question.required && !(customAnswers[question.id] ?? '').trim()) : undefined
+  const submitHint = !name.trim()
+    ? 'Enter your name to continue.'
+    : !rsvp
+      ? 'Choose whether you’ll be joining.'
+      : rsvp === 'confirmed' && settings?.askGuestCount && (!guestCount || Number(guestCount) < 1 || Number(guestCount) > 500)
+        ? 'Enter a number of people from 1 to 500.'
+        : rsvp === 'confirmed' && settings?.askCheckinDate && !checkinDate
+          ? 'Select a check-in date to submit your RSVP.'
+          : rsvp === 'confirmed' && settings?.askCheckoutDate && !checkoutDate
+            ? 'Select a check-out date to submit your RSVP.'
+            : missingCustomQuestion
+              ? `Answer “${missingCustomQuestion.label}” to submit your RSVP.`
+              : tooManyTextWords
+                ? 'Keep each written answer within 100 words.'
+                : ''
   const [submitted, setSubmitted] = useState(false)
   const [alreadySubmitted, setAlreadySubmitted] = useState(false)
   const [error, setError] = useState('')
@@ -125,7 +141,8 @@ export function PublicRsvpPage({ token }: { token: string }) {
                 </fieldset>)}
               </>}
               {error && <p className="public-rsvp-error" role="alert">{error}</p>}
-              <button className="primary-button public-rsvp-submit" disabled={saving || tooManyTextWords || !rsvp || (rsvp === 'confirmed' && Boolean(settings?.askCheckinDate && !checkinDate || settings?.askCheckoutDate && !checkoutDate))}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Sending RSVP…' : 'Send RSVP'}</button>
+              {submitHint && <p className="public-rsvp-submit-hint" role="status">{submitHint}</p>}
+              <button className={`primary-button public-rsvp-submit${saving ? ' is-saving' : ''}`} disabled={saving || Boolean(submitHint)}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Sending RSVP…' : 'Send RSVP'}</button>
             </form>}
     </section>
   </main>

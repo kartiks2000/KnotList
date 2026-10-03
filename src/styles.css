@@ -555,3 +555,6 @@ select:not(.workspace-picker){
 .public-rsvp-document-list li>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .public-rsvp-document-list li>small{flex:0 0 auto;margin-left:auto;color:#92998e;font-size:9px}
 .public-rsvp-document-list li>button{width:25px;height:25px;flex:0 0 auto;display:grid;place-items:center;border:1px solid #e5e3dc;border-radius:6px;background:#fff;color:#8e726b;cursor:pointer}
+.public-rsvp-submit:disabled{cursor:not-allowed}
+.public-rsvp-submit.is-saving{cursor:wait}
+.public-rsvp-submit-hint{margin:0;color:#858a81;font-size:11px;line-height:1.45}

@@ -56,6 +56,7 @@ type GuestDocument = {
   file_name: string
   mime_type: string
   size_bytes: number
+  document_type: 'general' | 'identification'
   created_at: string
 }
 
@@ -67,7 +68,7 @@ function formatAddedAt(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value))
 }
 
-export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceId: string; guestId: string; canManage: boolean }) {
+export function GuestDocuments({ workspaceId, guestId, canManage, includeIdentification = false }: { workspaceId: string; guestId: string; canManage: boolean; includeIdentification?: boolean }) {
   const [documents, setDocuments] = useState<GuestDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -80,10 +81,10 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
     setLoading(true)
     const { data, error: queryError } = await supabase
       .from('guest_documents')
-      .select('id, workspace_id, guest_group_id, storage_path, file_name, mime_type, size_bytes, created_at')
+      .select('id, workspace_id, guest_group_id, storage_path, file_name, mime_type, size_bytes, document_type, created_at')
       .eq('workspace_id', workspaceId)
       .eq('guest_group_id', guestId)
-      .eq('document_type', 'general')
+      .in('document_type', includeIdentification ? ['general', 'identification'] : ['general'])
       .order('created_at', { ascending: false })
     if (queryError) {
       setError('Documents are not set up yet. Ask a project admin to apply the guest documents migration.')
@@ -174,7 +175,7 @@ export function GuestDocuments({ workspaceId, guestId, canManage }: { workspaceI
     {message && <p className="guest-documents-message" role="status">{message}</p>}
     {loading ? <p className="guest-documents-empty"><LoaderCircle className="spin" size={15} /> Loading documents…</p>
       : documents.length === 0 ? <p className="guest-documents-empty">No documents added yet.</p>
-        : <ul className="guest-document-list">{documents.map(item => <li key={item.id}><span className="guest-document-icon">{item.mime_type === 'application/pdf' ? <FileText size={17} /> : <ImageIcon size={17} />}</span><span className="guest-document-info"><strong>{item.file_name}</strong><small>{formatFileSize(Number(item.size_bytes))} · Added {formatAddedAt(item.created_at)}</small></span><button type="button" className="guest-document-open" disabled={busyId === item.id} onClick={() => void openDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : 'View'}</button><button type="button" className="guest-document-download" aria-label={`Download ${item.file_name}`} title="Download document" disabled={busyId === item.id} onClick={() => void downloadDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}</button>{canManage && <button type="button" className="guest-document-delete" aria-label={`Delete ${item.file_name}`} title="Delete document" disabled={busyId === item.id || uploading} onClick={() => void deleteDocument(item)}><Trash2 size={15} /></button>}</li>)}</ul>}
+        : <ul className="guest-document-list">{documents.map(item => <li key={item.id}><span className="guest-document-icon">{item.mime_type === 'application/pdf' ? <FileText size={17} /> : <ImageIcon size={17} />}</span><span className="guest-document-info"><strong>{item.file_name}</strong><small>{includeIdentification ? `${item.document_type === 'identification' ? 'Identification' : 'Guest document'} · ` : ''}{formatFileSize(Number(item.size_bytes))} · Added {formatAddedAt(item.created_at)}</small></span><button type="button" className="guest-document-open" disabled={busyId === item.id} onClick={() => void openDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : 'View'}</button><button type="button" className="guest-document-download" aria-label={`Download ${item.file_name}`} title="Download document" disabled={busyId === item.id} onClick={() => void downloadDocument(item)}>{busyId === item.id ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}</button>{canManage && <button type="button" className="guest-document-delete" aria-label={`Delete ${item.file_name}`} title="Delete document" disabled={busyId === item.id || uploading} onClick={() => void deleteDocument(item)}><Trash2 size={15} /></button>}</li>)}</ul>}
   </section>
 }
 
@@ -188,7 +189,7 @@ export function GuestIdentificationDocument({ workspaceId, guestId }: { workspac
     async function load() {
       if (!supabase) return
       const { data, error: queryError } = await supabase.from('guest_documents')
-        .select('id, workspace_id, guest_group_id, storage_path, file_name, mime_type, size_bytes, created_at')
+        .select('id, workspace_id, guest_group_id, storage_path, file_name, mime_type, size_bytes, document_type, created_at')
         .eq('workspace_id', workspaceId).eq('guest_group_id', guestId).eq('document_type', 'identification')
         .order('created_at', { ascending: false })
       if (!active) return
