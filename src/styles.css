@@ -548,3 +548,10 @@ select:not(.workspace-picker){
 .guest-main.whatsapp-main{width:100%;max-width:none}
 .whatsapp-page{width:100%;gap:10px}
 .whatsapp-editor{width:100%;max-width:none}
+
+.public-rsvp-document{display:grid}
+.public-rsvp-document-list{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.public-rsvp-document-list li{min-width:0;display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid #e9e7e0;border-radius:7px;background:#fafbf9;color:#59675a;font-size:10px}
+.public-rsvp-document-list li>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.public-rsvp-document-list li>small{flex:0 0 auto;margin-left:auto;color:#92998e;font-size:9px}
+.public-rsvp-document-list li>button{width:25px;height:25px;flex:0 0 auto;display:grid;place-items:center;border:1px solid #e5e3dc;border-radius:6px;background:#fff;color:#8e726b;cursor:pointer}
