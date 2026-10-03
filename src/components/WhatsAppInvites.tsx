@@ -110,14 +110,17 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
   const filteredGuests = useMemo(() => {
     const query = guestSearch.trim().toLocaleLowerCase()
     if (!query) return guests
-    return guests.filter(guest => [guest.contact_name, guest.family_name, guest.phone].some(value => value?.toLocaleLowerCase().includes(query)))
+    return guests.filter(guest => [guest.contact_name, guest.family_name, guest.phone]
+      .some(value => value?.toLocaleLowerCase().includes(query)))
   }, [guests, guestSearch])
-  const selectedGuestLabel = selectedGuest ? selectedGuest.contact_name ? `${selectedGuest.contact_name} · ${selectedGuest.family_name}` : selectedGuest.family_name : ''
   const message = useMemo(() => {
     if (!personalRsvpLink) return template
     if (template.includes('{rsvp_link}')) return template.replaceAll('{rsvp_link}', personalRsvpLink)
     return `${template.trim()}\n\nPlease RSVP using your personal link:\n${personalRsvpLink}`
   }, [personalRsvpLink, template])
+  const selectedGuestLabel = selectedGuest
+    ? selectedGuest.contact_name ? `${selectedGuest.contact_name} · ${selectedGuest.family_name}` : selectedGuest.family_name
+    : ''
   const attachmentName = mediaFile?.name ?? (!removeSavedMedia ? savedTemplate?.media_file_name : null)
   const templateHasAttachment = Boolean(attachmentName)
   const templateIsDirty = !savedTemplate || template !== savedTemplate.message || mediaChanged || removeSavedMedia
@@ -241,6 +244,10 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
       setError('Select a guest before sending an invitation.')
       return
     }
+    if (loadingPersonalLink || !personalRsvpLink) {
+      setError('The guest’s personal RSVP link is not ready. Please wait and try again.')
+      return
+    }
     if (selectedGuest.invitation_sent && !window.confirm(`${selectedGuest.contact_name || selectedGuest.family_name} is already marked as invited. Send another invitation?`)) return
     if (templateHasAttachment && !mediaFile) {
       setError('The saved attachment is unavailable. Select it again or remove it before sharing.')
@@ -286,12 +293,12 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
       setNotice(`${selectedGuest.contact_name || selectedGuest.family_name} marked as invited at ${new Date(sentAt).toLocaleString()}. WhatsApp can’t confirm delivery.`)
       return
     }
-    setNotice(`${prefix} Choose a guest first if you want KnotList to record the invite timestamp. WhatsApp can’t confirm delivery.`)
+    setNotice(`${prefix} WhatsApp can’t confirm delivery.`)
   }
 
   async function openWhatsAppFromFallback() {
-    if (!selectedGuest) {
-      setError('Select a guest before sending an invitation.')
+    if (!selectedGuest || !personalRsvpLink) {
+      setError('Select a guest and wait for their personal RSVP link before opening WhatsApp.')
       return
     }
     if (selectedGuest.invitation_sent && !window.confirm(`${selectedGuest.contact_name || selectedGuest.family_name} is already marked as invited. Send another invitation?`)) return
@@ -315,9 +322,8 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
     <header className="guest-heading-row whatsapp-heading"><div><h1>Invite</h1></div></header>
     <div className="whatsapp-editor">
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading invitation…</div> : <>
-        <label className="form-field whatsapp-message-field">Invitation message<textarea rows={5} maxLength={3000} value={template} onChange={event => setTemplate(event.target.value)} placeholder="Write your invitation…" /></label>
+        <label className="form-field whatsapp-message-field">Invitation message<textarea rows={5} maxLength={3000} value={template} onChange={event => setTemplate(event.target.value)} placeholder="Write your invitation…" /><small className="whatsapp-template-help">The selected guest’s personal RSVP link is added automatically. Use <code>{'{rsvp_link}'}</code> to choose where it appears.</small></label>
         <div className="form-field whatsapp-guest-field"><span id="invite-guest-label">Select guest <span className="required-mark">Required</span></span><div className="whatsapp-guest-picker" ref={guestPickerRef}><button type="button" className="whatsapp-guest-trigger" aria-haspopup="listbox" aria-expanded={guestPickerOpen} aria-labelledby="invite-guest-label" onClick={() => { setGuestPickerOpen(open => !open); setGuestSearch('') }}><span>{selectedGuestLabel || 'Search and select a guest'}</span>{loadingPersonalLink ? <LoaderCircle className="spin" size={16} /> : <ChevronDown size={16} />}</button>{guestPickerOpen && <div className="whatsapp-guest-popover"><label className="whatsapp-guest-search"><Search size={15} /><input type="search" value={guestSearch} onChange={event => setGuestSearch(event.target.value)} placeholder="Search name or phone" aria-label="Search guests by name or phone" /></label><div className="whatsapp-guest-options" role="listbox" aria-labelledby="invite-guest-label">{filteredGuests.length ? filteredGuests.map(guest => <button key={guest.id} type="button" role="option" aria-selected={guest.id === selectedGuestId} className={`whatsapp-guest-option${guest.invitation_sent ? ' whatsapp-guest-option-invited' : ''}${guest.id === selectedGuestId ? ' whatsapp-guest-option-selected' : ''}`} onClick={() => { setSelectedGuestId(guest.id); setGuestPickerOpen(false); setGuestSearch(''); setNotice(''); setError('') }}><span className="whatsapp-guest-option-identity"><strong>{guest.contact_name ? `${guest.contact_name} · ${guest.family_name}` : guest.family_name}</strong>{guest.phone && <small>{guest.phone}</small>}</span>{guest.invitation_sent && <span className="whatsapp-guest-invited-badge"><Check size={12} />Already invited</span>}</button>) : <p className="whatsapp-guest-no-results">No guests match that search.</p>}</div></div>}</div>{selectedGuest && <small className="whatsapp-guest-link-status">{loadingPersonalLink ? 'Preparing personal RSVP link…' : personalRsvpLink ? 'Their personal RSVP link will be included in the message.' : 'Personal RSVP link unavailable.'}</small>}</div>
-        <small className="whatsapp-template-help">The selected guest’s personal RSVP link is added automatically. Use <code>{'{rsvp_link}'}</code> to choose where it appears.</small>
         <div className="whatsapp-preview"><span>MESSAGE PREVIEW</span><p>{message || 'Your invitation preview will appear here.'}</p></div>
         <div className="whatsapp-media-row"><div className="whatsapp-media-copy"><strong>Image or video</strong><small>{attachmentName || 'Optional · up to 20 MB'}</small></div>{attachmentName && <button type="button" className="whatsapp-remove-media" aria-label="Remove attached media" title="Remove attachment" onClick={() => { setMediaFile(null); setMediaChanged(false); setRemoveSavedMedia(Boolean(savedTemplate?.media_path)) }}><X size={16} /></button>}<label className="secondary-button whatsapp-attach-button"><ImagePlus size={16} />{attachmentName ? 'Change media' : 'Add media'}<input type="file" accept="image/*,video/*" onChange={event => void chooseMedia(event)} /></label></div>
         {attachmentName && <div className="whatsapp-file-note">{(mediaFile?.type ?? savedTemplate?.media_mime_type ?? '').startsWith('video/') ? <Video size={15} /> : <ImagePlus size={15} />} This file is saved with the template. On supported browsers, use the share sheet to choose WhatsApp and a contact.</div>}
