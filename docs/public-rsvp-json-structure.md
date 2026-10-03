@@ -7,7 +7,7 @@ Admins configure the public RSVP form from **Planning space → Settings → RSV
 - turn check-in and check-out date questions on or off;
 - add any number of date choices (up to 20 for each enabled date question).
 - add up to 10 extra questions: short answer, yes/no, or choose-one.
-- optionally request one private identification document (PDF or image), and optionally require it for Yes RSVPs.
+- optionally request up to eight private identification documents (PDF or image, 2 MB each), and optionally require at least one for Yes RSVPs.
 
 An enabled date question needs at least one date choice. Date answers are required only for a Yes RSVP. No replies are recorded without stay dates. When the number-of-people question is off, the guest record uses a count of 1.
 
@@ -31,7 +31,7 @@ There is one active shared link/token per planning space. Admins can also create
 
 ## Request requirements
 
-Requests use `POST` with a JSON body and these headers. Use `multipart/form-data` only when attaching an identification document (see the upload example below).
+Requests use `POST` with a JSON body and these headers. Use `multipart/form-data` when attaching identification documents (see the upload example below).
 
 ```http
 Content-Type: application/json
@@ -114,7 +114,7 @@ Field rules:
 - Do not include date fields for a declined response.
 - Submissions using a guest-specific token update that existing guest entry. For those tokens only, `name` is saved as the custom answer **Name entered by guest** and does not replace the guest’s saved name. Shared RSVP tokens and POST submissions using the shared token retain their existing behavior.
 
-When identification uploads are enabled, include the document using `multipart/form-data`. For example:
+When identification uploads are enabled, include each document as a repeated `identificationDocument` field using `multipart/form-data`. You can attach up to eight PDFs or images, each no larger than 2 MB. For example:
 
 ```bash
 curl --request POST \
@@ -127,10 +127,11 @@ curl --request POST \
   --form 'rsvp=confirmed' \
   --form 'checkinDate=2027-02-19' \
   --form 'customAnswers={"YOUR_QUESTION_ID":"Vegetarian"}' \
-  --form 'identificationDocument=@./passport.pdf;type=application/pdf'
+  --form 'identificationDocument=@./passport.pdf;type=application/pdf' \
+  --form 'identificationDocument=@./driving-licence.jpg;type=image/jpeg'
 ```
 
-Multipart fields use the same names as JSON fields; `customAnswers` is a JSON string. `identificationDocument` is one PDF or image up to 20 MB. Do not set `Content-Type` manually; the HTTP client adds the multipart boundary. Documents are stored in the private guest-documents bucket and are only readable by workspace admins. Lodging managers can view general guest attachments but cannot read identification documents. If uploads are optional, confirmed RSVPs may omit the file. If required, confirmed RSVPs must include one; declined RSVPs never need to upload one.
+Multipart fields use the same names as JSON fields; `customAnswers` is a JSON string. Repeat `identificationDocument` once for each PDF or image (up to eight files, 2 MB per file). Do not set `Content-Type` manually; the HTTP client adds the multipart boundary. Documents are stored in the private guest-documents bucket and are only readable by workspace admins. Lodging managers can view general guest attachments but cannot read identification documents. If uploads are optional, confirmed RSVPs may omit the files. If required, confirmed RSVPs must include at least one; declined RSVPs never need to upload files.
 
 Successful response:
 

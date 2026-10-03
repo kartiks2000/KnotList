@@ -31,9 +31,8 @@ Deno.serve(async request => {
     checkinDate?: unknown
     checkoutDate?: unknown
     customAnswers?: unknown
-    identificationDocument?: File
   }
-  let identificationFile: File | null = null
+  let identificationFiles: File[] = []
   try {
     if ((request.headers.get('content-type') ?? '').includes('multipart/form-data')) {
       const form = await request.formData()
@@ -51,8 +50,9 @@ Deno.serve(async request => {
         checkoutDate: value('checkoutDate'),
         customAnswers: value('customAnswers') ? JSON.parse(value('customAnswers')!) : undefined,
       }
-      const upload = form.get('identificationDocument')
-      identificationFile = upload instanceof File && upload.size ? upload : null
+      const uploads = [...form.getAll('identificationDocument'), ...form.getAll('identificationDocuments')]
+      if (uploads.some(upload => !(upload instanceof File))) return response({ error: 'Upload PDF or image files for identification.' }, 400)
+      identificationFiles = uploads.filter((upload): upload is File => upload instanceof File && upload.size > 0)
     } else input = await request.json()
   } catch {
     return response({ error: 'Submit a valid RSVP form.' }, 400)
@@ -96,12 +96,13 @@ Deno.serve(async request => {
   const formSettings = formRows[0].settings ?? {}
   const documentEnabled = formSettings.askIdentificationDocument === true
   const documentRequired = formSettings.requireIdentificationDocument === true
-  if (identificationFile && (!documentEnabled || input.rsvp !== 'confirmed')) return response({ error: 'An identification document is not expected for this response.' }, 400)
-  if (documentRequired && input.rsvp === 'confirmed' && !identificationFile) return response({ error: 'Upload an identification document to submit this RSVP.' }, 400)
-  if (identificationFile) {
+  if (identificationFiles.length > 8) return response({ error: 'Upload no more than 8 identification documents.' }, 400)
+  if (identificationFiles.length && (!documentEnabled || input.rsvp !== 'confirmed')) return response({ error: 'Identification documents are not expected for this response.' }, 400)
+  if (documentRequired && input.rsvp === 'confirmed' && !identificationFiles.length) return response({ error: 'Upload an identification document to submit this RSVP.' }, 400)
+  if (identificationFiles.length) {
     const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
-    if (!allowedTypes.has(identificationFile.type)) return response({ error: 'Upload a PDF or image file for identification.' }, 400)
-    if (identificationFile.size < 1 || identificationFile.size > 2 * 1024 * 1024) return response({ error: 'The identification document must be 2 MB or smaller.' }, 400)
+    if (identificationFiles.some(file => !allowedTypes.has(file.type))) return response({ error: 'Upload PDF or image files for identification.' }, 400)
+    if (identificationFiles.some(file => file.size < 1 || file.size > 2 * 1024 * 1024)) return response({ error: 'Each identification document must be 2 MB or smaller.' }, 400)
   }
 
   const name = typeof input.name === 'string' ? input.name.trim() : ''
@@ -110,14 +111,18 @@ Deno.serve(async request => {
   if (rsvp !== 'confirmed' && rsvp !== 'declined') return response({ error: 'Choose Yes or No for your RSVP.' }, 400)
 
   const guestGroupId = workspaceRows[0].guest_group_id || crypto.randomUUID()
-  let documentMetadata: Record<string, unknown> | undefined
-  let uploadedPath = ''
-  if (identificationFile) {
+  const documentMetadata: Record<string, unknown>[] = []
+  const uploadedPaths: string[] = []
+  for (const identificationFile of identificationFiles) {
     const safeName = identificationFile.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(-120) || 'identification-document'
-    uploadedPath = `${workspaceRows[0].workspace_id}/${guestGroupId}/${crypto.randomUUID()}-${safeName}`
+    const uploadedPath = `${workspaceRows[0].workspace_id}/${guestGroupId}/${crypto.randomUUID()}-${safeName}`
     const { error: uploadError } = await adminClient.storage.from('guest-documents').upload(uploadedPath, identificationFile, { contentType: identificationFile.type, upsert: false })
-    if (uploadError) return response({ error: 'Could not upload the identification document. Please try again.' }, 500)
-    documentMetadata = { storagePath: uploadedPath, fileName: identificationFile.name.slice(0, 255), mimeType: identificationFile.type, sizeBytes: identificationFile.size }
+    if (uploadError) {
+      if (uploadedPaths.length) await adminClient.storage.from('guest-documents').remove(uploadedPaths)
+      return response({ error: 'Could not upload the identification documents. Please try again.' }, 500)
+    }
+    uploadedPaths.push(uploadedPath)
+    documentMetadata.push({ storagePath: uploadedPath, fileName: identificationFile.name.slice(0, 255), mimeType: identificationFile.type, sizeBytes: identificationFile.size })
   }
   const { data, error } = await adminClient.rpc('submit_public_workspace_rsvp_once', {
     requested_token: token,
@@ -129,21 +134,24 @@ Deno.serve(async request => {
       ...(input.checkinDate !== undefined ? { checkinDate: input.checkinDate } : {}),
       ...(input.checkoutDate !== undefined ? { checkoutDate: input.checkoutDate } : {}),
       ...(input.customAnswers !== undefined ? { customAnswers: input.customAnswers } : {}),
-      ...(documentMetadata ? { identificationDocument: documentMetadata } : {}),
+      ...(documentMetadata.length ? { identificationDocuments: documentMetadata } : {}),
     },
   })
   if (error) {
     // Keep credentials and submitted guest data out of logs; the SQL error
     // details are enough to diagnose stale/invalid form questions.
     console.error('Public RSVP submission failed:', { code: error.code, message: error.message })
-    if (uploadedPath) await adminClient.storage.from('guest-documents').remove([uploadedPath])
+    if (uploadedPaths.length) await adminClient.storage.from('guest-documents').remove(uploadedPaths)
     const alreadySubmitted = error.message.includes('already been submitted')
     const invalidLink = error.message.includes('invalid or has been turned off')
     const answerValidationError = error.code === '22023'
     return response({ error: alreadySubmitted ? 'This RSVP has already been submitted.' : invalidLink ? 'This RSVP link is invalid or has been turned off.' : answerValidationError ? error.message : 'Could not save your RSVP. Please check your answers and try again.' }, alreadySubmitted ? 409 : invalidLink ? 404 : 400)
   }
   const workspaceName = data?.[0]?.workspace_name
-  if (!workspaceName) return response({ error: 'Could not save your RSVP. Please try again.' }, 500)
+  if (!workspaceName) {
+    if (uploadedPaths.length) await adminClient.storage.from('guest-documents').remove(uploadedPaths)
+    return response({ error: 'Could not save your RSVP. Please try again.' }, 500)
+  }
 
   // The in-app notification is created in the same database transaction as the RSVP.
   // Browser push runs as a background task so its network requests do not delay the
