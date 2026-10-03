@@ -333,6 +333,5 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
         {showAttachmentFallback && mediaFile && <div className="whatsapp-fallback" role="status"><div><strong>Your browser can’t attach media to WhatsApp directly.</strong><p>Download the file, then open WhatsApp with the message and attach it in the chat.</p></div><button type="button" className="secondary-button" onClick={downloadAttachment}>Download media</button><button type="button" className="secondary-button" onClick={() => void openWhatsAppFromFallback()}>Open WhatsApp</button></div>}
       </>}
     </div>
-    <footer className="guest-footer">Messages are prepared in KnotList. WhatsApp opens separately so you can choose who receives each invitation.</footer>
   </section>
 }
