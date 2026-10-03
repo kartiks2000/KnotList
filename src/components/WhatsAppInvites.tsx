@@ -248,6 +248,7 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
       setError('The guest’s personal RSVP link is not ready. Please wait and try again.')
       return
     }
+    if (selectedGuest.invitation_sent && !window.confirm(`${selectedGuest.contact_name || selectedGuest.family_name} is already marked as invited. Send another invitation?`)) return
     if (templateHasAttachment && !mediaFile) {
       setError('The saved attachment is unavailable. Select it again or remove it before sharing.')
       return
@@ -300,6 +301,7 @@ export function WhatsAppInvites({ workspaceId, workspaceName, guests, onMarkInvi
       setError('Select a guest and wait for their personal RSVP link before opening WhatsApp.')
       return
     }
+    if (selectedGuest.invitation_sent && !window.confirm(`${selectedGuest.contact_name || selectedGuest.family_name} is already marked as invited. Send another invitation?`)) return
     window.open(whatsappUrl(message), '_blank', 'noopener,noreferrer')
     const sentAt = new Date().toISOString()
     const tracked = selectedGuest ? await onMarkInvitationSent(selectedGuest.id, sentAt).catch(() => false) : null
