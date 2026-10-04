@@ -558,3 +558,4 @@ select:not(.workspace-picker){
 .public-rsvp-submit:disabled{cursor:not-allowed}
 .public-rsvp-submit.is-saving{cursor:wait}
 .public-rsvp-submit-hint{margin:0;color:#858a81;font-size:11px;line-height:1.45}
+.card-only-tag{display:inline-flex;align-items:center;min-height:21px;padding:2px 8px;border:1px solid #e6dfcd;border-radius:999px;background:#f7f3e9;color:#83734e;font-size:9px;font-weight:600;white-space:nowrap}
