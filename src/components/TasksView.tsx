@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, Check, Circle, ListChecks, LoaderCircle, MessageCircle, Plus, Send, Trash2, X } from 'lucide-react'
+import { CalendarDays, Check, Circle, Edit3, ListChecks, LoaderCircle, MessageCircle, Plus, Send, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { DropdownSelect } from './DropdownSelect'
 
@@ -20,6 +20,7 @@ type WorkspaceTask = {
 
 type TaskCardActions = {
   toggle: (task: WorkspaceTask) => void
+  edit: (task: WorkspaceTask) => void
   remove: (task: WorkspaceTask) => void
   comment: (task: WorkspaceTask, body: string) => void
   draft: (taskId: string, value: string) => void
@@ -37,7 +38,7 @@ const TaskCard = memo(function TaskCard({ task, canManage, busy, assignee, comme
     <div className="task-card-main">
       <button className="task-complete-button" aria-label={task.is_completed ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`} title={task.is_completed ? 'Mark incomplete' : 'Mark complete'} disabled={!canManage || busy} onClick={() => actions.toggle(task)}>{task.is_completed ? <Check size={15} /> : <Circle size={17} />}</button>
       <div className="task-info"><h2>{task.title}</h2>{task.description && <p className="task-description">{task.description}</p>}<div className="task-meta"><span>{assignee}</span>{task.deadline && <span><CalendarDays size={13} />Due {formatDeadline(task.deadline)}</span>}</div></div>
-      {canManage && <button className="task-delete-button" aria-label={`Delete ${task.title}`} title="Delete task" disabled={busy} onClick={() => actions.remove(task)}>{busy ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}</button>}
+      {canManage && <div className="task-card-actions"><button className="task-edit-button" aria-label={`Edit ${task.title}`} title="Edit task" disabled={busy} onClick={() => actions.edit(task)}><Edit3 size={15} /></button><button className="task-delete-button" aria-label={`Delete ${task.title}`} title="Delete task" disabled={busy} onClick={() => actions.remove(task)}>{busy ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}</button></div>}
     </div>
     <details className="task-comments">
       <summary><MessageCircle size={15} /><span>Comments</span><span className="task-comment-count">{task.workspace_task_comments.length}</span></summary>
@@ -74,9 +75,10 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [editingTask, setEditingTask] = useState<WorkspaceTask | null>(null)
   const [busyTaskId, setBusyTaskId] = useState('')
   const [error, setError] = useState('')
-  const taskActionsRef = useRef<TaskCardActions>({ toggle: () => {}, remove: () => {}, comment: () => {}, draft: () => {} })
+  const taskActionsRef = useRef<TaskCardActions>({ toggle: () => {}, edit: () => {}, remove: () => {}, comment: () => {}, draft: () => {} })
   const loadSequenceRef = useRef(0)
   const lastFocusRefreshRef = useRef(0)
 
@@ -130,7 +132,7 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
 
   useEffect(() => {
     const refreshOnReturn = () => {
-      if (document.visibilityState !== 'visible' || createDialogOpen || saving || busyTaskId) return
+      if (document.visibilityState !== 'visible' || createDialogOpen || editingTask || saving || busyTaskId) return
       const now = Date.now()
       if (now - lastFocusRefreshRef.current < 1500) return
       lastFocusRefreshRef.current = now
@@ -142,38 +144,68 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
       window.removeEventListener('focus', refreshOnReturn)
       document.removeEventListener('visibilitychange', refreshOnReturn)
     }
-  }, [workspaceId, createDialogOpen, saving, busyTaskId])
+  }, [workspaceId, createDialogOpen, editingTask, saving, busyTaskId])
 
-  function closeCreateDialog() {
+  function closeTaskDialog() {
     setCreateDialogOpen(false)
+    setEditingTask(null)
+    setTitle('')
+    setDescription('')
+    setDeadline('')
+    setError('')
+  }
+
+  function openCreateDialog() {
+    setEditingTask(null)
+    setTitle('')
+    setDescription('')
+    setDeadline('')
+    setError('')
+    setCreateDialogOpen(true)
+  }
+
+  function openEditDialog(task: WorkspaceTask) {
+    setCreateDialogOpen(false)
+    setEditingTask(task)
+    setTitle(task.title)
+    setDescription(task.description ?? '')
+    setAssignedTo(task.assigned_to ?? '')
+    setDeadline(task.deadline ?? '')
+    setError('')
   }
 
   const visibleTasks = useMemo(() => tasks.filter(task => (filter === 'all' || (filter === 'completed' ? task.is_completed : !task.is_completed)) && (assigneeFilter === 'all' || task.assigned_to === assigneeFilter)), [tasks, filter, assigneeFilter])
 
-  async function createTask(event: React.FormEvent<HTMLFormElement>) {
+  async function saveTask(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!supabase || !canManage || !title.trim() || !assignedTo) return
+    const isEditing = editingTask !== null
+    if (!supabase || !canManage || !title.trim() || (!isEditing && !assignedTo)) return
     setSaving(true)
     setError('')
-    const { data: createdTask, error: insertError } = await supabase.from('workspace_tasks').insert({
-      workspace_id: workspaceId,
+    const payload = {
       title: title.trim(),
       description: description.trim(),
-      assigned_to: assignedTo,
+      assigned_to: assignedTo || null,
       deadline: deadline || null,
+    }
+    const result = isEditing
+      ? await supabase.from('workspace_tasks').update(payload).eq('workspace_id', workspaceId).eq('id', editingTask.id).select('id').single()
+      : await supabase.from('workspace_tasks').insert({
+      workspace_id: workspaceId,
+      ...payload,
     }).select('id').single()
-    if (insertError) {
-      setError('Could not add this task. Check your access and try again.')
+    if (result.error) {
+      setError(isEditing ? 'Could not save this task. Check your access and try again.' : 'Could not add this task. Check your access and try again.')
       setSaving(false)
       return
     }
-    setTitle('')
-    setDescription('')
-    setDeadline('')
-    setCreateDialogOpen(false)
+    const savedTaskId = result.data.id
+    closeTaskDialog()
     setSaving(false)
-    const { data: notificationEventId } = await supabase.rpc('get_workspace_task_notification_event_id', { requested_task_id: createdTask.id, requested_comment_id: null })
-    if (notificationEventId) void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId } })
+    if (!isEditing) {
+      const { data: notificationEventId } = await supabase.rpc('get_workspace_task_notification_event_id', { requested_task_id: savedTaskId, requested_comment_id: null })
+      if (notificationEventId) void supabase.functions.invoke('send-lodging-push', { body: { notificationEventId } })
+    }
     await loadTasks(true)
   }
 
@@ -235,22 +267,31 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
     const person = assignees.find(assignee => assignee.user_id === userId)
     return person ? (person.display_name || person.email || 'Admin') : 'Former admin'
   }
+  const taskAssigneeOptions = [
+    ...(editingTask ? [{ value: '', label: 'Unassigned' }] : []),
+    ...(editingTask?.assigned_to && !assignees.some(person => person.user_id === editingTask.assigned_to)
+      ? [{ value: editingTask.assigned_to, label: assigneeLabel(editingTask.assigned_to) }]
+      : []),
+    ...assignees.map(person => ({ value: person.user_id, label: person.user_id === currentUserId ? `Me${currentUserEmail ? ` (${currentUserEmail})` : ''}` : person.display_name || person.email || 'Admin' })),
+  ]
 
   taskActionsRef.current = {
     toggle: task => { void toggleTask(task) },
+    edit: task => openEditDialog(task),
     remove: task => { void deleteTask(task) },
     comment: (task, body) => { void addComment(task, body) },
     draft: (taskId, value) => setCommentDrafts(current => ({ ...current, [taskId]: value })),
   }
   const actions = useMemo<TaskCardActions>(() => ({
     toggle: task => taskActionsRef.current.toggle(task),
+    edit: task => taskActionsRef.current.edit(task),
     remove: task => taskActionsRef.current.remove(task),
     comment: (task, body) => taskActionsRef.current.comment(task, body),
     draft: (taskId, value) => taskActionsRef.current.draft(taskId, value),
   }), [])
 
   return <section className="tasks-page" aria-labelledby="tasks-title">
-    <header className="tasks-heading"><div><h1 id="tasks-title">Tasks</h1></div>{canManage && <button className="primary-button task-open-create" onClick={() => setCreateDialogOpen(true)}><Plus size={17} /><span>Add task</span></button>}</header>
+    <header className="tasks-heading"><div><h1 id="tasks-title">Tasks</h1></div>{canManage && <button className="primary-button task-open-create" onClick={openCreateDialog}><Plus size={17} /><span>Add task</span></button>}</header>
 
     <div className="task-filter-row"><nav className="task-filters" aria-label="Filter tasks">{(['all', 'incomplete', 'completed'] as TaskFilter[]).map(value => <button key={value} className={`filter-chip ${filter === value ? 'filter-active' : ''}`} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? 'All' : value === 'incomplete' ? 'Incomplete' : 'Completed'}<span className="filter-count">{value === 'all' ? tasks.length : value === 'completed' ? tasks.filter(task => task.is_completed).length : tasks.filter(task => !task.is_completed).length}</span></button>)}</nav><label className="task-person-filter"><span>Person</span><DropdownSelect value={assigneeFilter} onChange={setAssigneeFilter} ariaLabel="Filter tasks by person" className="task-person-menu" options={[{ value: 'all', label: 'Everyone' }, ...assignees.map(person => ({ value: person.user_id, label: person.user_id === currentUserId ? `My tasks${currentUserEmail ? ` (${currentUserEmail})` : ''}` : person.display_name || person.email || 'Admin' }))]} /></label></div>
 
@@ -260,6 +301,6 @@ export const TasksView = memo(function TasksView({ workspaceId, canManage }: { w
         : visibleTasks.length === 0 ? <div className="task-empty"><ListChecks size={21} /><h2>{assigneeFilter !== 'all' ? 'No tasks for this person' : filter === 'completed' ? 'No completed tasks' : filter === 'incomplete' ? 'All caught up' : 'No tasks yet'}</h2><p>{canManage ? 'Add a task above when something needs doing.' : 'Tasks added to this planning space will show up here.'}</p></div>
           : visibleTasks.map(task => <TaskCard key={task.id} task={task} canManage={canManage} busy={busyTaskId === task.id} assignee={assigneeLabel(task.assigned_to)} commentDraft={commentDrafts[task.id] ?? ''} actions={actions} />)}
     </div>
-    {createDialogOpen && canManage && <div className="dialog-backdrop task-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) closeCreateDialog() }}><section className="guest-dialog task-create-dialog" role="dialog" aria-modal="true" aria-labelledby="task-create-title"><header className="dialog-header"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h2 id="task-create-title">Add task</h2></div><button className="dialog-close" type="button" onClick={closeCreateDialog} aria-label="Close" disabled={saving}><X size={19} /></button></header><form className="task-dialog-form guest-form" onSubmit={event => void createTask(event)}><label className="form-field">Task title<input value={title} onChange={event => setTitle(event.target.value)} maxLength={180} placeholder="What needs to get done?" required autoFocus /></label><label className="form-field">Description <span className="optional-label">(optional)</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={2000} rows={4} placeholder="Add a few details" /></label><div className="form-field"><span>Assign to</span><DropdownSelect value={assignedTo} onChange={setAssignedTo} ariaLabel="Assign task to" placeholder={assignees.length ? 'Choose an Admin' : 'No Admins available'} disabled={assignees.length === 0} className="form-dropdown-select" options={assignees.map(person => ({ value: person.user_id, label: person.user_id === currentUserId ? `Me${currentUserEmail ? ` (${currentUserEmail})` : ''}` : person.display_name || person.email || 'Admin' }))} /></div><label className="form-field">Deadline <span className="optional-label">(optional)</span><input type="date" value={deadline} onChange={event => setDeadline(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<footer className="dialog-actions"><button type="button" className="secondary-button" onClick={closeCreateDialog} disabled={saving}>Cancel</button><button className="primary-button" disabled={saving || !title.trim() || !assignedTo}>{saving ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />}{saving ? 'Adding…' : 'Add task'}</button></footer></form></section></div>}
+    {(createDialogOpen || editingTask) && canManage && <div className="dialog-backdrop task-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) closeTaskDialog() }}><section className="guest-dialog task-create-dialog" role="dialog" aria-modal="true" aria-labelledby="task-create-title"><header className="dialog-header"><div><span className="guest-eyebrow">YOUR PLANNING SPACE</span><h2 id="task-create-title">{editingTask ? 'Edit task' : 'Add task'}</h2></div><button className="dialog-close" type="button" onClick={closeTaskDialog} aria-label="Close" disabled={saving}><X size={19} /></button></header><form className="task-dialog-form guest-form" onSubmit={event => void saveTask(event)}><label className="form-field">Task title<input value={title} onChange={event => setTitle(event.target.value)} maxLength={180} placeholder="What needs to get done?" required autoFocus /></label><label className="form-field">Description <span className="optional-label">(optional)</span><textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={2000} rows={4} placeholder="Add a few details or notes" /></label><div className="form-field"><span>Assign to</span><DropdownSelect value={assignedTo} onChange={setAssignedTo} ariaLabel="Assign task to" placeholder={assignees.length ? 'Choose an Admin' : 'No Admins available'} disabled={assignees.length === 0 && !editingTask} className="form-dropdown-select" options={taskAssigneeOptions} /></div><label className="form-field">Deadline <span className="optional-label">(optional)</span><input type="date" value={deadline} onChange={event => setDeadline(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<footer className="dialog-actions"><button type="button" className="secondary-button" onClick={closeTaskDialog} disabled={saving}>Cancel</button><button className="primary-button" disabled={saving || !title.trim() || (!editingTask && !assignedTo)}>{saving ? <LoaderCircle className="spin" size={16} /> : editingTask ? <Check size={16} /> : <Plus size={16} />}{saving ? (editingTask ? 'Saving…' : 'Adding…') : editingTask ? 'Save changes' : 'Add task'}</button></footer></form></section></div>}
   </section>
 })
