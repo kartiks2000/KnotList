@@ -263,7 +263,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       })
 
       if (canReadGuestData) {
-        const { data, error } = await supabase.from('guest_groups').select('*').eq('workspace_id', workspaceId).order('family_name', { ascending: true })
+        const { data, error } = await supabase.from('guest_groups').select('*').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).order('family_name', { ascending: true })
         if (requestSequence !== guestLoadSequenceRef.current) return
         if (error) {
           if (!quiet) {
