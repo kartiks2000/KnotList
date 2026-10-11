@@ -419,7 +419,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
   const filteredGuests = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase()
     return guests.filter(guest => {
-      const matchesSearch = !needle || [guest.family_name, guest.contact_name, guest.phone].some(value => value.toLocaleLowerCase().includes(needle))
+      const matchesSearch = !needle || [guest.family_name, guest.contact_name, guest.phone, getLodgingRsvpName(guest)].some(value => value.toLocaleLowerCase().includes(needle))
       const matchesFilter = filter === 'all'
         || (filter === 'invite' && !guest.card_only && !guest.invitation_sent)
         || (filter === 'card_only' && guest.card_only === true)
@@ -1022,7 +1022,7 @@ const GuestCard = memo(function GuestCard({ guest, workspaceId, canDelete, delet
   return (
     <article className="guest-card">
       <button className="guest-card-main" onClick={onOpen} aria-label={`View ${guest.family_name}`}>
-        <div className="guest-card-title"><div><h2>{guest.family_name}</h2>{guest.contact_name && <span className="guest-contact">{guest.contact_name}{guest.phone ? ` · ${guest.phone}` : ''}</span>}</div><ChevronRight size={18} /></div>
+        <div className="guest-card-title"><div><h2>{guest.family_name}</h2>{getLodgingRsvpName(guest) && <span className="guest-rsvp-name">RSVP name: {getLodgingRsvpName(guest)}</span>}{guest.contact_name && <span className="guest-contact">{guest.contact_name}{guest.phone ? ` · ${guest.phone}` : ''}</span>}</div><ChevronRight size={18} /></div>
         <div className="guest-card-meta"><span className="expected-count"><Users size={15} />{guest.guest_count} {guest.guest_count === 1 ? 'guest' : 'guests'}</span><span className={`rsvp-pill ${guest.rsvp_status === 'pending' && !guest.invitation_sent ? 'rsvp-not-invited' : `rsvp-${guest.rsvp_status}`}`}>{rsvpLabel(guest)}</span>{guest.card_only && <span className="card-only-tag">Card only</span>}{guest.self_rsvp && <span className="self-rsvp-tag">Self RSVP</span>}</div>
         <div className="guest-card-status"><span className={guest.invitation_sent ? 'state-done' : 'state-todo'}><Mail size={14} />Invite {guest.invitation_sent ? `sent${guest.invitation_sent_at ? ` · ${formatDate(guest.invitation_sent_at)}` : ''}` : 'not sent'}</span><span className={guest.invitation_call_made ? 'state-done' : 'state-todo'}><Phone size={14} />Call {guest.invitation_call_made ? `made${guest.last_called_at ? ` · ${formatDate(guest.last_called_at)}` : ''}` : 'not made'}</span></div>
         {(stay || roomDetails) && <div className="guest-stay"><CalendarDays size={15} /><span>{stay || 'Stay dates not added'}</span>{roomDetails && <span className="room-count">{roomDetails}</span>}</div>}
