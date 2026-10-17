@@ -431,13 +431,19 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
     })
   }, [guests, search, filter])
 
-  const guestTotal = guests.reduce((total, guest) => total + guest.guest_count, 0)
-  const inviteTotal = guests.filter(guest => !guest.card_only && !guest.invitation_sent).length
-  const cardOnlyTotal = guests.filter(guest => guest.card_only === true).length
-  const waitingTotal = guests.filter(guest => guest.invitation_sent && guest.rsvp_status === 'pending').length
-  const confirmedTotal = guests.filter(guest => guest.rsvp_status === 'confirmed').length
-  const declinedTotal = guests.filter(guest => guest.rsvp_status === 'declined').length
-  const assignedRoomTotal = guests.reduce((total, guest) => total + (guest.assigned_room_numbers ?? []).filter(room => room.trim()).length, 0)
+  const guestTotal = filteredGuests.reduce((total, guest) => total + guest.guest_count, 0)
+  const inviteTotal = filteredGuests.filter(guest => !guest.card_only && !guest.invitation_sent).length
+  const cardOnlyTotal = filteredGuests.filter(guest => guest.card_only === true).length
+  const waitingTotal = filteredGuests.filter(guest => guest.invitation_sent && guest.rsvp_status === 'pending').length
+  const confirmedTotal = filteredGuests.filter(guest => guest.rsvp_status === 'confirmed').length
+  const declinedTotal = filteredGuests.filter(guest => guest.rsvp_status === 'declined').length
+  const assignedRoomTotal = filteredGuests.reduce((total, guest) => total + (guest.assigned_room_numbers ?? []).filter(room => room.trim()).length, 0)
+  const allInviteTotal = guests.filter(guest => !guest.card_only && !guest.invitation_sent).length
+  const allCardOnlyTotal = guests.filter(guest => guest.card_only === true).length
+  const allWaitingTotal = guests.filter(guest => guest.invitation_sent && guest.rsvp_status === 'pending').length
+  const allConfirmedTotal = guests.filter(guest => guest.rsvp_status === 'confirmed').length
+  const allDeclinedTotal = guests.filter(guest => guest.rsvp_status === 'declined').length
+  const allSelfRsvpTotal = guests.filter(guest => guest.self_rsvp).length
   const workspaceName = workspaces.find(workspace => workspace.id === workspaceId)?.name ?? 'Planning space'
 
   const updateGiftField = useCallback(async (guest: GuestGroup, field: GiftField, value: boolean) => {
@@ -600,11 +606,11 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
       <main className={`guest-main ${section === 'guests' && viewMode === 'spreadsheet' ? 'spreadsheet-main' : ''} ${section === 'whatsapp' ? 'whatsapp-main' : ''} ${section === 'settings' ? 'settings-main' : ''}`}>
         {section === 'guests' && canAccessGuests ? <>
         <div className="guest-heading-row"><div><h1>Guests</h1></div><div className="guest-heading-actions"><div className="data-toolbar-controls">{!loading && !loadError && guests.length > 0 && <><ViewActions value={viewMode} onChange={setViewMode} label="Guest list" /><ExportActions onCsv={() => void exportGuests('csv')} onPdf={() => void exportGuests('pdf')} disabled={filteredGuests.length === 0} /></>}</div><button className="primary-button add-family-button" onClick={() => showEditor()}><Plus size={18} /> Add guest</button></div></div>
-        <section className="guest-summary" aria-label="Guest list summary"><div><Users size={16} /><strong>{guests.length}</strong><span>{guests.length === 1 ? 'guest' : 'guests'}</span></div><span className="summary-divider" /><div><strong>{guestTotal}</strong><span>headcount</span></div><span className="summary-divider" /><div><strong>{inviteTotal}</strong><span>to invite</span></div><span className="summary-divider" /><div><strong>{waitingTotal}</strong><span>awaiting RSVP</span></div><span className="summary-divider" /><div><strong>{assignedRoomTotal}</strong><span>rooms assigned</span></div></section>
+        <section className="guest-summary" aria-label="Guest list summary"><div><Users size={16} /><strong>{filteredGuests.length}</strong><span>{filteredGuests.length === 1 ? 'guest' : 'guests'}</span></div><span className="summary-divider" /><div><strong>{guestTotal}</strong><span>headcount</span></div><span className="summary-divider" /><div><strong>{inviteTotal}</strong><span>to invite</span></div><span className="summary-divider" /><div><strong>{waitingTotal}</strong><span>awaiting RSVP</span></div><span className="summary-divider" /><div><strong>{assignedRoomTotal}</strong><span>rooms assigned</span></div></section>
 
         <div className="guest-toolbar"><label className="guest-search"><Search size={18} /><input aria-label="Search guests or contacts" placeholder="Search guests or contacts" value={search} onChange={event => setSearch(event.target.value)} /></label><button className="mobile-add-button" onClick={() => showEditor()} aria-label="Add guest"><Plus size={18} /><span>Add</span></button></div>
 
-        <nav className="guest-filters" aria-label="Filter guest list">{(Object.keys(filterLabels) as Filter[]).map(key => <button key={key} className={`filter-chip ${filter === key ? 'filter-active' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>{filterLabels[key]}{key === 'invite' && inviteTotal > 0 && <span className="filter-count">{inviteTotal}</span>}{key === 'card_only' && cardOnlyTotal > 0 && <span className="filter-count">{cardOnlyTotal}</span>}{key === 'rsvp' && waitingTotal > 0 && <span className="filter-count">{waitingTotal}</span>}{key === 'confirmed' && confirmedTotal > 0 && <span className="filter-count">{confirmedTotal}</span>}{key === 'declined' && declinedTotal > 0 && <span className="filter-count">{declinedTotal}</span>}{key === 'self_rsvp' && guests.filter(guest => guest.self_rsvp).length > 0 && <span className="filter-count">{guests.filter(guest => guest.self_rsvp).length}</span>}</button>)}</nav>
+        <nav className="guest-filters" aria-label="Filter guest list">{(Object.keys(filterLabels) as Filter[]).map(key => <button key={key} className={`filter-chip ${filter === key ? 'filter-active' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>{filterLabels[key]}{key === 'invite' && allInviteTotal > 0 && <span className="filter-count">{allInviteTotal}</span>}{key === 'card_only' && allCardOnlyTotal > 0 && <span className="filter-count">{allCardOnlyTotal}</span>}{key === 'rsvp' && allWaitingTotal > 0 && <span className="filter-count">{allWaitingTotal}</span>}{key === 'confirmed' && allConfirmedTotal > 0 && <span className="filter-count">{allConfirmedTotal}</span>}{key === 'declined' && allDeclinedTotal > 0 && <span className="filter-count">{allDeclinedTotal}</span>}{key === 'self_rsvp' && allSelfRsvpTotal > 0 && <span className="filter-count">{allSelfRsvpTotal}</span>}</button>)}</nav>
 
         {!loading && !loadError && guests.length > 0 && <div className="guest-view-row"><span>{filteredGuests.length} {filteredGuests.length === 1 ? 'guest' : 'guests'}</span></div>}
 
@@ -764,8 +770,6 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
   const [search, setSearch] = useState('')
   const [exportError, setExportError] = useState('')
   const eligibleGuests = useMemo(() => guests.filter(guest => guest.rsvp_status !== 'declined'), [guests])
-  const guestTotal = eligibleGuests.reduce((count, guest) => count + guest.guest_count, 0)
-  const roomTotal = eligibleGuests.reduce((count, guest) => count + (guest.room_count ?? 0), 0)
   const hasAssignedRooms = (guest: GuestGroup) => (guest.assigned_room_numbers ?? []).some(room => room.trim().length > 0)
   const allocatedGuests = eligibleGuests.filter(hasAssignedRooms).length
   const unallocatedGuests = eligibleGuests.length - allocatedGuests
@@ -784,6 +788,8 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
       return matchesFilter && matchesSearch
     })
   }, [eligibleGuests, lodgingFilter, search])
+  const guestTotal = visibleGuests.reduce((count, guest) => count + guest.guest_count, 0)
+  const roomTotal = visibleGuests.reduce((count, guest) => count + (guest.room_count ?? 0), 0)
 
   async function exportLodging(format: 'csv' | 'pdf') {
     const headers = ['Guest', 'Name', 'Number of guests', 'Total rooms', 'Allotted room numbers', 'Checked in', 'Checked out']
