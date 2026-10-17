@@ -433,10 +433,7 @@ export function GuestList({ workspaceId, workspaces, onWorkspaceChange, onBackTo
 
   const guestTotal = filteredGuests.reduce((total, guest) => total + guest.guest_count, 0)
   const inviteTotal = filteredGuests.filter(guest => !guest.card_only && !guest.invitation_sent).length
-  const cardOnlyTotal = filteredGuests.filter(guest => guest.card_only === true).length
   const waitingTotal = filteredGuests.filter(guest => guest.invitation_sent && guest.rsvp_status === 'pending').length
-  const confirmedTotal = filteredGuests.filter(guest => guest.rsvp_status === 'confirmed').length
-  const declinedTotal = filteredGuests.filter(guest => guest.rsvp_status === 'declined').length
   const assignedRoomTotal = filteredGuests.reduce((total, guest) => total + (guest.assigned_room_numbers ?? []).filter(room => room.trim()).length, 0)
   const allInviteTotal = guests.filter(guest => !guest.card_only && !guest.invitation_sent).length
   const allCardOnlyTotal = guests.filter(guest => guest.card_only === true).length
