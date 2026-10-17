@@ -190,6 +190,7 @@
   .lodging-heading{align-items:flex-start;flex-direction:column;gap:11px;margin-bottom:10px}.lodging-heading h1{font-size:29px;margin:3px 0}.lodging-heading p{font-size:10px}.lodging-summary{padding:7px 10px;font-size:9px}.lodging-summary strong{font-size:12px}.lodging-data-scroll{flex:1}.lodging-table{min-width:680px}.lodging-table th,.lodging-table td{height:52px;padding:8px 11px}.lodging-table tbody th{width:125px;min-width:125px;max-width:125px}.lodging-footer{font-size:9px}
 }
 .lodging-editor-form{display:grid;align-content:start;gap:14px;padding:18px 25px 19px}
+.lodging-readonly-label{display:flex;align-items:center;gap:8px}.lodging-readonly-badge{padding:3px 7px;border:1px solid #dfe4db;border-radius:999px;background:#eef1eb;color:#778273;font-size:9px;font-weight:600;letter-spacing:.25px}.lodging-readonly-field input[readonly]{border-color:#dfe3dc;background:#f1f2ed;color:#737d70;font-weight:600;cursor:not-allowed;box-shadow:inset 3px 0 #aab8a5}
 @media(max-width:650px){.lodging-editor-form{gap:13px;padding:14px 18px 18px}}
 .people-role-line select{min-height:34px;padding:0 27px 0 9px;border:1px solid #e1e4dc;border-radius:7px;background:#fff;color:#58705a;font:600 11px 'DM Sans',sans-serif}
 .sheet-action-heading,.sheet-action,.lodging-action-heading,.lodging-action{width:48px;min-width:48px;max-width:48px;padding-left:6px!important;padding-right:6px!important}
