@@ -769,7 +769,7 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
   const [lodgingFilter, setLodgingFilter] = useState<'all' | 'allocated' | 'unallocated' | 'checked-in' | 'checked-out'>('all')
   const [search, setSearch] = useState('')
   const [exportError, setExportError] = useState('')
-  const eligibleGuests = useMemo(() => guests.filter(guest => guest.rsvp_status !== 'declined'), [guests])
+  const eligibleGuests = useMemo(() => guests.filter(guest => guest.rsvp_status === 'confirmed' && guest.card_only !== true), [guests])
   const hasAssignedRooms = (guest: GuestGroup) => (guest.assigned_room_numbers ?? []).some(room => room.trim().length > 0)
   const allocatedGuests = eligibleGuests.filter(hasAssignedRooms).length
   const unallocatedGuests = eligibleGuests.length - allocatedGuests
@@ -813,7 +813,7 @@ function LodgingView({ guests, workspaceName, loading, loadError, viewMode, onVi
     <div className={`lodging-data-scroll ${viewMode === 'cards' ? 'lodging-cards-mode' : ''}`}>
       {loading ? <div className="guest-loading"><LoaderCircle className="spin" size={22} /> Loading lodging…</div>
         : loadError ? <div className="guest-state error-state"><h2>Couldn’t load lodging</h2><p>Check your connection or workspace access, then try again.</p><button className="secondary-button" onClick={onRetry}>Try again</button></div>
-          : eligibleGuests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No guests for lodging</h2><p>Guests with a declined RSVP are excluded from lodging.</p></div>
+          : eligibleGuests.length === 0 ? <div className="guest-state"><div className="empty-mark"><BedDouble size={23} /></div><h2>No confirmed guests for lodging</h2><p>Only confirmed guests who are not marked “Card only” appear here.</p></div>
             : visibleGuests.length === 0 ? <div className="guest-state compact-state"><h2>No guests match this view</h2><p>Try another name, room number, or lodging filter.</p><button className="text-button" onClick={() => { setSearch(''); setLodgingFilter('all') }}>Clear search and filters</button></div>
               : viewMode === 'spreadsheet' ? <><div className="lodging-table-scroll" role="region" aria-label="Lodging spreadsheet" tabIndex={0}><table className="lodging-table"><thead><tr><th>Guest</th><th>Name</th><th>Guests</th><th>Total rooms</th><th>Allotted room numbers</th><th>Checked in</th><th>Checked out</th><th className="lodging-action-heading"><span className="sr-only">Guest actions</span></th></tr></thead><tbody>{visibleGuests.map(guest => <LodgingSpreadsheetRow key={guest.id} guest={guest} canEdit={canEdit} saving={savingStatuses.has(guest.id)} onStatusChange={onStatusChange} onEdit={onEdit} onViewDocuments={onViewDocuments} />)}</tbody></table></div><p className="spreadsheet-hint lodging-spreadsheet-hint">Scroll sideways to see more columns.</p></>
               : <section className="lodging-card-list" aria-label="Lodging cards">{visibleGuests.map(guest => <LodgingCard key={guest.id} guest={guest} canEdit={canEdit} saving={savingStatuses.has(guest.id)} onStatusChange={onStatusChange} onEdit={onEdit} onViewDocuments={onViewDocuments} />)}</section>}
@@ -827,7 +827,6 @@ function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
   onClose: () => void
   onSaved: (guest: GuestGroup) => void
 }) {
-  const [guestCount, setGuestCount] = useState(String(guest.guest_count))
   const [roomCount, setRoomCount] = useState(guest.room_count == null ? '' : String(guest.room_count))
   const [roomNumbers, setRoomNumbers] = useState<string[]>(guest.assigned_room_numbers ?? [])
   const [saving, setSaving] = useState(false)
@@ -841,7 +840,7 @@ function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
     const { data, error: saveError } = await supabase.rpc('update_workspace_lodging', {
       requested_workspace_id: workspaceId,
       requested_guest_group_id: guest.id,
-      requested_guest_count: Number(guestCount),
+      requested_guest_count: guest.guest_count,
       requested_room_count: roomCount === '' ? null : Number(roomCount),
       requested_room_numbers: roomNumbers.map(room => room.trim()).filter(Boolean),
       requested_checked_in: guest.checked_in,
@@ -861,7 +860,7 @@ function LodgingEditor({ workspaceId, guest, onClose, onSaved }: {
   }
 
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose() }}><section className="guest-dialog lodging-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="lodging-editor-title"><header className="dialog-header"><div><span className="guest-eyebrow">{guest.family_name}</span><h2 id="lodging-editor-title">Update lodging</h2></div><button className="dialog-close" onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form className="guest-form lodging-editor-form" onSubmit={save}>
-    <label className="form-field">Number of guests<input type="number" inputMode="numeric" min="0" max="500" value={guestCount} onChange={event => setGuestCount(event.target.value)} required /></label>
+    <label className="form-field">Number of guests<input type="number" value={guest.guest_count} readOnly aria-readonly="true" /><small className="field-hint">Headcount comes from the guest record or RSVP and can’t be changed here.</small></label>
     <label className="form-field">Total rooms<input type="number" inputMode="numeric" min="0" max="100" value={roomCount} onChange={event => setRoomCount(event.target.value)} placeholder="Not set" /></label>
     <div className="assigned-rooms-editor"><div className="assigned-rooms-heading">Allotted room numbers</div>{roomNumbers.length === 0 && <p className="room-assignment-hint">No room numbers allotted.</p>}{roomNumbers.map((room, index) => <div className="assigned-room-row" key={index}><label className="sr-only" htmlFor={`lodging-room-${guest.id}-${index}`}>Allotted room number {index + 1}</label><input id={`lodging-room-${guest.id}-${index}`} value={room} maxLength={30} onChange={event => setRoomNumbers(current => current.map((value, roomIndex) => roomIndex === index ? event.target.value : value))} placeholder={`Room number ${index + 1}`} /><button type="button" className="remove-room-button" onClick={() => setRoomNumbers(current => current.filter((_, roomIndex) => roomIndex !== index))} aria-label={`Remove room ${room || index + 1}`}><X size={17} /></button></div>)}<button type="button" className="add-room-button" onClick={() => setRoomNumbers(current => [...current, ''])}><Plus size={15} /> Add room number</button></div>
     {error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Saving…' : 'Save changes'}</button></div>
